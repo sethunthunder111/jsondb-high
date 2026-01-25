@@ -1,0 +1,68 @@
+{
+  "name": "jsondb-high",
+  "version": "1.0.0",
+  "description": "A blazing fast, Rust-powered in-memory JSON database for Node.js with WAL, Encryption, and Advanced Query support.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "name": "jsondb-high",
+    "triples": {
+      "defaults": true,
+      "additional": [
+        "x86_64-unknown-linux-musl",
+        "aarch64-unknown-linux-gnu",
+        "i686-pc-windows-msvc",
+        "armv7-unknown-linux-gnueabihf",
+        "aarch64-apple-darwin",
+        "aarch64-linux-android",
+        "x86_64-unknown-freebsd",
+        "aarch64-unknown-linux-musl",
+        "aarch64-pc-windows-msvc",
+        "armv7-linux-androideabi"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "artifacts": "napi artifacts",
+    "test": "bun tests/database.test.ts",
+    "bench": "bun benchmarks/run.ts",
+    "universal": "napi universal",
+    "version": "napi version"
+  },
+  "keywords": [
+    "json",
+    "database",
+    "rust",
+    "n-api",
+    "in-memory",
+    "wal",
+    "nosql",
+    "fast",
+    "storage",
+    "typescript",
+    "encryption"
+  ],
+  "author": "sethunthunder111",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sethunthunder111/jsondb-high.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sethunthunder111/jsondb-high/issues"
+  },
+  "homepage": "https://github.com/sethunthunder111/jsondb-high#readme",
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.0",
+    "@types/bun": "latest",
+    "@types/node": "^20.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">= 16.0.0"
+  }
+}

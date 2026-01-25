@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="jsondb-high Documentation - Complete guide to the blazing fast JSON database.">
+    <title>Documentation | jsondb-high</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="pages.css">
+</head>
+<body>
+    <nav class="nav" id="nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo"><span class="logo-bracket">{</span><span class="logo-text">jsondb</span><span class="logo-highlight">-high</span><span class="logo-bracket">}</span></a>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Home</a>
+                <a href="docs.html" class="nav-link active">Documentation</a>
+                <a href="benchmarks.html" class="nav-link">Benchmarks</a>
+                <a href="https://github.com/sethunthunder111/jsondb-high" class="nav-link nav-github" target="_blank">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                    GitHub
+                </a>
+            </div>
+            <button class="nav-toggle" id="navToggle"><span></span><span></span><span></span></button>
+        </div>
+    </nav>
+
+    <div class="mobile-menu" id="mobileMenu">
+        <a href="index.html" class="mobile-link">Home</a>
+        <a href="docs.html" class="mobile-link active">Documentation</a>
+        <a href="benchmarks.html" class="mobile-link">Benchmarks</a>
+    </div>
+
+    <div class="docs-layout">
+        <aside class="docs-sidebar">
+            <div class="sidebar-section">
+                <div class="sidebar-title">Getting Started</div>
+                <ul class="sidebar-links">
+                    <li><a href="#introduction" class="sidebar-link active">Introduction</a></li>
+                    <li><a href="#installation" class="sidebar-link">Installation</a></li>
+                    <li><a href="#quick-start" class="sidebar-link">Quick Start</a></li>
+                    <li><a href="#tutorial" class="sidebar-link">Beginner Tutorial</a></li>
+                    <li><a href="#configuration" class="sidebar-link">Configuration</a></li>
+                </ul>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-title">Core Concepts</div>
+                <ul class="sidebar-links">
+                    <li><a href="#storage-modes" class="sidebar-link">Storage Modes</a></li>
+                    <li><a href="#data-paths" class="sidebar-link">Data Paths</a></li>
+                    <li><a href="#indices" class="sidebar-link">Indices</a></li>
+                </ul>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-title">API Reference</div>
+                <ul class="sidebar-links">
+                    <li><a href="#basic-operations" class="sidebar-link">Basic Operations</a></li>
+                    <li><a href="#array-operations" class="sidebar-link">Array Operations</a></li>
+                    <li><a href="#math-operations" class="sidebar-link">Math Operations</a></li>
+                    <li><a href="#query-api" class="sidebar-link">Query API</a></li>
+                    <li><a href="#simple-find" class="sidebar-link">Simple Find</a></li>
+                    <li><a href="#pagination" class="sidebar-link">Pagination</a></li>
+                    <li><a href="#batch-transactions" class="sidebar-link">Batch & Transactions</a></li>
+                    <li><a href="#ttl" class="sidebar-link">TTL (Time to Live)</a></li>
+                    <li><a href="#pubsub" class="sidebar-link">Pub/Sub Events</a></li>
+                    <li><a href="#utility-methods" class="sidebar-link">Utility Methods</a></li>
+                    <li><a href="#encryption" class="sidebar-link">Encryption</a></li>
+                    <li><a href="#snapshots" class="sidebar-link">Snapshots</a></li>
+                    <li><a href="#middleware" class="sidebar-link">Middleware</a></li>
+                </ul>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-title">Examples</div>
+                <ul class="sidebar-links">
+                    <li><a href="#example-user-system" class="sidebar-link">User Management</a></li>
+                    <li><a href="#example-session" class="sidebar-link">Session Store</a></li>
+                    <li><a href="#example-cache" class="sidebar-link">Caching Layer</a></li>
+                </ul>
+            </div>
+        </aside>
+
+        <main class="docs-content">
+            <h1>jsondb-high Documentation</h1>
+
+            <div class="toc">
+                <h3>📖 On This Page</h3>
+                <ul>
+                    <li><a href="#introduction">Introduction</a></li>
+                    <li><a href="#installation">Installation</a></li>
+                    <li><a href="#quick-start">Quick Start</a></li>
+                    <li><a href="#tutorial">Beginner Tutorial</a></li>
+                    <li><a href="#api-reference">Full API Reference</a></li>
+                    <li><a href="#examples">Real-World Examples</a></li>
+                </ul>
+            </div>
+
+            <h2 id="introduction">Introduction</h2>
+            <p><strong>jsondb-high</strong> is a blazing fast, feature-rich JSON database for Node.js with a Rust-powered core via N-API. It's designed for developers who need high performance without the complexity of external database servers.</p>
+
+            <div class="info-box tip">
+                <div class="info-box-title">💡 Why jsondb-high?</div>
+                <p>Unlike traditional databases, jsondb-high runs entirely within your Node.js process. No separate server, no network latency, no complex setup. Just import and use.</p>
+            </div>
+
+            <h3>Key Features</h3>
+            <ul>
+                <li><strong>⚡ Blazing Fast</strong> - Core logic in Rust via N-API (~800k ops/sec reads, ~136k ops/sec writes)</li>
+                <li><strong>🛡️ Atomic Operations</strong> - Write-Ahead Logging (WAL) prevents data corruption</li>
+                <li><strong>🔍 O(1) Indexing</strong> - In-memory Map indices for instant lookups</li>
+                <li><strong>🔒 AES-256 Encryption</strong> - Optional encryption for data at rest</li>
+                <li><strong>📦 Zero Dependencies</strong> - Self-contained native binary</li>
+                <li><strong>⏱️ TTL Support</strong> - Auto-expire keys like Redis</li>
+                <li><strong>📡 Pub/Sub</strong> - EventEmitter-style subscriptions</li>
+                <li><strong>📊 Aggregations</strong> - Built-in sum, avg, min, max, groupBy</li>
+            </ul>
+
+            <h2 id="installation">Installation</h2>
+            <p>Install jsondb-high using your preferred package manager:</p>
+
+            <pre><code><span class="code-comment"># Using bun (recommended)</span>
+<span class="code-function">bun</span> add jsondb-high
+
+<span class="code-comment"># Using npm</span>
+<span class="code-function">npm</span> install jsondb-high
+
+<span class="code-comment"># Using yarn</span>
+<span class="code-function">yarn</span> add jsondb-high
+
+<span class="code-comment"># Using pnpm</span>
+<span class="code-function">pnpm</span> add jsondb-high</code></pre>
+
+            <div class="info-box info">
+                <div class="info-box-title">ℹ️ Requirements</div>
+                <p>jsondb-high requires Node.js 18.0.0 or higher. The package includes pre-built binaries for Windows, macOS, and Linux (x64 and ARM64).</p>
+            </div>
+
+            <h2 id="quick-start">Quick Start</h2>
+            <p>Get up and running in under 2 minutes with this simple example:</p>
+
+            <div class="quick-steps">
+                <div class="quick-step">
+                    <h3>Create a new project</h3>
+                    <pre><code><span class="code-function">mkdir</span> my-project && <span class="code-function">cd</span> my-project
+<span class="code-function">bun</span> init -y
+<span class="code-function">bun</span> add jsondb-high</code></pre>
+                </div>
+
+                <div class="quick-step">
+                    <h3>Create your first database</h3>
+                    <pre><code><span class="code-comment">// index.ts</span>
+<span class="code-keyword">import</span> JSONDatabase <span class="code-keyword">from</span> <span class="code-string">'jsondb-high'</span>;
+
+<span class="code-comment">// Initialize the database</span>
+<span class="code-keyword">const</span> db = <span class="code-keyword">new</span> <span class="code-function">JSONDatabase</span>(<span class="code-string">'mydata.json'</span>);
+
+<span class="code-comment">// Write some data</span>
+<span class="code-keyword">await</span> db.<span class="code-function">set</span>(<span class="code-string">'user.1'</span>, {
+    name: <span class="code-string">'Alice'</span>,
+    email: <span class="code-string">'alice@example.com'</span>,
+    role: <span class="code-string">'admin'</span>
+});
+
+<span class="code-comment">// Read it back</span>
+<span class="code-keyword">const</span> user = <span class="code-keyword">await</span> db.<span class="code-function">get</span>(<span class="code-string">'user.1'</span>);
+console.<span class="code-function">log</span>(user);
+<span class="code-comment">// Output: { name: 'Alice', email: 'alice@example.com', role: 'admin' }</span></code></pre>
+                </div>
+
+                <div class="quick-step">
+                    <h3>Run your code</h3>
+                    <pre><code><span class="code-function">bun</span> run index.ts</code></pre>
+                    <p>That's it! Your data is now persisted to <code>mydata.json</code>.</p>
+                </div>
+            </div>
+
+            <h2 id="configuration">Configuration Options</h2>
+            <p>The <code>JSONDatabase</code> constructor accepts an optional configuration object:</p>
+
+            <pre><code><span class="code-keyword">const</span> db = <span class="code-keyword">new</span> <span class="code-function">JSONDatabase</span>(<span class="code-string">'data.json'</span>, {
+    <span class="code-comment">// Enable Write-Ahead Logging for crash safety</span>
+    wal: <span class="code-boolean">true</span>,
+    
+    <span class="code-comment">// Define indices for O(1) lookups</span>
+    indices: [
+        { name: <span class="code-string">'email'</span>, path: <span class="code-string">'users'</span>, field: <span class="code-string">'email'</span> },
+        { name: <span class="code-string">'username'</span>, path: <span class="code-string">'users'</span>, field: <span class="code-string">'username'</span> }
+    ],
+    
+    <span class="code-comment">// Enable AES-256 encryption (must be exactly 32 characters)</span>
+    encryptionKey: <span class="code-string">'your-32-character-secret-key!!'</span>
+});</code></pre>
+
+            <h2 id="storage-modes">Storage Modes</h2>
+            <p>jsondb-high offers two storage consistency modes. Choose based on your durability requirements:</p>
+
+            <h3>In-Memory Mode (Default)</h3>
+            <p>Maximum throughput at ~136k ops/sec. Data is kept in RAM and flushed to disk periodically.</p>
+            <pre><code><span class="code-keyword">const</span> db = <span class="code-keyword">new</span> <span class="code-function">JSONDatabase</span>(<span class="code-string">'data.json'</span>, {
+    wal: <span class="code-boolean">false</span>  <span class="code-comment">// This is the default</span>
+});</code></pre>
+
+            <div class="info-box tip">
+                <div class="info-box-title">✅ Best for</div>
+                <p>Caching, sessions, temporary data, high-write workloads where occasional data loss is acceptable.</p>
+            </div>
+
+            <h3>WAL Mode (Durable)</h3>
+            <p>Crash-safe writes at ~3k ops/sec. Every write is appended to a Write-Ahead Log immediately.</p>
+            <pre><code><span class="code-keyword">const</span> db = <span class="code-keyword">new</span> <span class="code-function">JSONDatabase</span>(<span class="code-string">'data.json'</span>, {
+    wal: <span class="code-boolean">true</span>
+});</code></pre>
+
+            <div class="info-box tip">
+                <div class="info-box-title">✅ Best for</div>
+                <p>Critical data, financial records, audit logs, any data that must survive crashes.</p>
+            </div>
+
+            <h2 id="data-paths">Understanding Data Paths</h2>
+            <p>jsondb-high uses dot-notation paths to access nested data. This is one of the most powerful features of the library.</p>
+
+            <pre><code><span class="code-comment">// Simple path</span>
+<span class="code-keyword">await</span> db.<span class="code-function">set</span>(<span class="code-string">'name'</span>, <span class="code-string">'Alice'</span>);
+
+<span class="code-comment">// Nested path - creates intermediate objects automatically</span>
+<span class="code-keyword">await</span> db.<span class="code-function">set</span>(<span class="code-string">'user.profile.name'</span>, <span class="code-string">'Alice'</span>);
+<span class="code-comment">// Result: { user: { profile: { name: 'Alice' } } }</span>
+
+<span class="code-comment">// Array access</span>
+<span class="code-keyword">await</span> db.<span class="code-function">set</span>(<span class="code-string">'users.0.name'</span>, <span class="code-string">'First User'</span>);
+
+<span class="code-comment">// Deep nesting works too</span>
+<span class="code-keyword">await</span> db.<span class="code-function">set</span>(<span class="code-string">'app.config.database.connection.host'</span>, <span class="code-string">'localhost'</span>);</code></pre>
+
+            <h2 id="indices">Indices for O(1) Lookups</h2>
+            <p>Indices allow you to find records instantly by a specific field value, regardless of how many records you have.</p>
+
+            <pre><code><span class="code-comment">// Define indices when creating the database</span>
+<span class="code-keyword">const</span> db = <span class="code-keyword">new</span> <span class="code-function">JSONDatabase</span>(<span class="code-string">'users.json'</span>, {
+    indices: [
+        { name: <span class="code-string">'email'</span>, path: <span class="code-string">'users'</span>, field: <span class="code-string">'email'</span> }
+    ]
+});
+
+<span class="code-comment">// Add some users</span>
+<span class="code-keyword">await</span> db.<span class="code-function">set</span>(<span class="code-string">'users.1'</span>, { name: <span class="code-string">'Alice'</span>, email: <span class="code-string">'alice@example.com'</span> });
+<span class="code-keyword">await</span> db.<span class="code-function">set</span>(<span class="code-string">'users.2'</span>, { name: <span class="code-string">'Bob'</span>, email: <span class="code-string">'bob@example.com'</span> });
+
+<span class="code-comment">// Instant O(1) lookup by email</span>
+<span class="code-keyword">const</span> alice = <span class="code-keyword">await</span> db.<span class="code-function">findByIndex</span>(<span class="code-string">'email'</span>, <span class="code-string">'alice@example.com'</span>);
+console.<span class="code-function">log</span>(alice); <span class="code-comment">// { name: 'Alice', email: 'alice@example.com' }</span></code></pre>
+
+            <div class="info-box warning">
+                <div class="info-box-title">⚠️ Important</div>
+                <p>Index fields should contain unique values. If multiple records have the same value, only one will be returned by <code>findByIndex</code>.</p>
+            </div>
+
+            <h2 id="basic-operations">Basic Operations</h2>
+
+            <h3 id="set">set(path, value)</h3>
+            <p>Writes data to the specified path. Creates nested objects automatically if they don't exist.</p>
+            <pre><code><span class="code-comment">// Simple value</span>
+<span class="code-keyword">await</span> db.<span class="code-function">set</span>(<span class="code-string">'config.theme'</span>, <span class="code-string">'dark'</span>);
+
+<span class="code-comment">// Object value</span>
+<span class="code-keyword">await</span> db.<span class="code-function">set</span>(<span class="code-string">'user.1'</span>, { name: <span class="code-string">'Alice'</span>, age: <span class="code-number">25</span> });
+
+<span class="code-comment">// Deep nested path</span>
+<span class="code-keyword">await</span> db.<span class="code-function">set</span>(<span class="code-string">'users.1.settings.notifications.email'</span>, <span class="code-boolean">true</span>);</code></pre>
+
+            <h3 id="get">get(path, defaultValue?)</h3>
+            <p>Retrieves data from the specified path. Returns <code>undefined</code> or the default value if path doesn't exist.</p>
+            <pre><code><span class="code-comment">// Basic get</span>
+<span class="code-keyword">const</span> theme = <span class="code-keyword">await</span> db.<span class="code-function">get</span>(<span class="code-string">'config.theme'</span>);
+
+<span class="code-comment">// With default value</span>
+<span class="code-keyword">const</span> language = <span class="code-keyword">await</span> db.<span class="code-function">get</span>(<span class="code-string">'config.language'</span>, <span class="code-string">'en'</span>);
+
+<span class="code-comment">// Get entire object</span>
+<span class="code-keyword">const</span> user = <span class="code-keyword">await</span> db.<span class="code-function">get</span>(<span class="code-string">'user.1'</span>);</code></pre>
+
+            <h3 id="has">has(path)</h3>
+            <p>Checks if a path exists in the database. Returns <code>true</code> or <code>false</code>.</p>
+            <pre><code><span class="code-keyword">if</span> (<span class="code-keyword">await</span> db.<span class="code-function">has</span>(<span class="code-string">'users.1'</span>)) {
+    console.<span class="code-function">log</span>(<span class="code-string">'User exists!'</span>);
+}</code></pre>
+
+            <h3 id="delete">delete(path)</h3>
+            <p>Removes data at the specified path.</p>
+            <pre><code><span class="code-comment">// Delete a specific property</span>
+<span class="code-keyword">await</span> db.<span class="code-function">delete</span>(<span class="code-string">'users.1.settings'</span>);
+
+<span class="code-comment">// Delete an entire object</span>
+<span class="code-keyword">await</span> db.<span class="code-function">delete</span>(<span class="code-string">'users.1'</span>);</code></pre>
+
+            <h2 id="array-operations">Array Operations</h2>
+
+            <h3>push(path, ...items)</h3>
+            <p>Adds items to an array. Creates the array if it doesn't exist. Automatically deduplicates.</p>
+            <pre><code><span class="code-keyword">await</span> db.<span class="code-function">push</span>(<span class="code-string">'users.1.tags'</span>, <span class="code-string">'premium'</span>, <span class="code-string">'beta'</span>);
+<span class="code-comment">// Result: ['premium', 'beta']</span>
+
+<span class="code-keyword">await</span> db.<span class="code-function">push</span>(<span class="code-string">'users.1.tags'</span>, <span class="code-string">'premium'</span>, <span class="code-string">'vip'</span>);
+<span class="code-comment">// Result: ['premium', 'beta', 'vip'] (no duplicate 'premium')</span></code></pre>
+
+            <h3>pull(path, ...items)</h3>
+            <p>Removes items from an array using deep equality comparison.</p>
+            <pre><code><span class="code-keyword">await</span> db.<span class="code-function">pull</span>(<span class="code-string">'users.1.tags'</span>, <span class="code-string">'beta'</span>);
+<span class="code-comment">// Result: ['premium', 'vip']</span></code></pre>
+
+            <h2 id="math-operations">Math Operations (Atomic)</h2>
+            <p>These operations are atomic - they read and write in a single operation, preventing race conditions.</p>
+
+            <h3>add(path, amount)</h3>
+            <pre><code><span class="code-keyword">const</span> newCount = <span class="code-keyword">await</span> db.<span class="code-function">add</span>(<span class="code-string">'stats.pageViews'</span>, <span class="code-number">1</span>);
+console.<span class="code-function">log</span>(<span class="code-string">'Page views:'</span>, newCount);</code></pre>
+
+            <h3>subtract(path, amount)</h3>
+            <pre><code><span class="code-keyword">const</span> remaining = <span class="code-keyword">await</span> db.<span class="code-function">subtract</span>(<span class="code-string">'user.1.credits'</span>, <span class="code-number">50</span>);
+console.<span class="code-function">log</span>(<span class="code-string">'Credits remaining:'</span>, remaining);</code></pre>
+
+            <h2 id="query-api">Query API</h2>
+            <p>The query API provides a chainable interface for complex data retrieval with filtering, sorting, and aggregation.</p>
+
+            <pre><code><span class="code-keyword">const</span> results = <span class="code-keyword">await</span> db.<span class="code-function">query</span>(<span class="code-string">'users'</span>)
+    .<span class="code-function">where</span>(<span class="code-string">'age'</span>).<span class="code-function">gte</span>(<span class="code-number">18</span>)
+    .<span class="code-function">where</span>(<span class="code-string">'role'</span>).<span class="code-function">eq</span>(<span class="code-string">'admin'</span>)
+    .<span class="code-function">sort</span>({ age: <span class="code-number">-1</span> })
+    .<span class="code-function">limit</span>(<span class="code-number">10</span>)
+    .<span class="code-function">select</span>([<span class="code-string">'id'</span>, <span class="code-string">'name'</span>, <span class="code-string">'email'</span>])
+    .<span class="code-function">exec</span>();</code></pre>
+
+            <h3>Available Where Clauses</h3>
+            <pre><code>.<span class="code-function">where</span>(<span class="code-string">'field'</span>).<span class="code-function">eq</span>(value)       <span class="code-comment">// Equal</span>
+.<span class="code-function">where</span>(<span class="code-string">'field'</span>).<span class="code-function">ne</span>(value)       <span class="code-comment">// Not equal</span>
+.<span class="code-function">where</span>(<span class="code-string">'field'</span>).<span class="code-function">gt</span>(value)       <span class="code-comment">// Greater than</span>
+.<span class="code-function">where</span>(<span class="code-string">'field'</span>).<span class="code-function">gte</span>(value)      <span class="code-comment">// Greater or equal</span>
+.<span class="code-function">where</span>(<span class="code-string">'field'</span>).<span class="code-function">lt</span>(value)       <span class="code-comment">// Less than</span>
+.<span class="code-function">where</span>(<span class="code-string">'field'</span>).<span class="code-function">lte</span>(value)      <span class="code-comment">// Less or equal</span>
+.<span class="code-function">where</span>(<span class="code-string">'field'</span>).<span class="code-function">between</span>(<span class="code-number">1</span>, <span class="code-number">10</span>) <span class="code-comment">// Between range</span>
+.<span class="code-function">where</span>(<span class="code-string">'field'</span>).<span class="code-function">in</span>([<span class="code-number">1</span>, <span class="code-number">2</span>])     <span class="code-comment">// In array</span>
+.<span class="code-function">where</span>(<span class="code-string">'field'</span>).<span class="code-function">contains</span>(<span class="code-string">'x'</span>)  <span class="code-comment">// String contains</span>
+.<span class="code-function">where</span>(<span class="code-string">'field'</span>).<span class="code-function">startsWith</span>(<span class="code-string">'x'</span>)<span class="code-comment">// String starts with</span>
+.<span class="code-function">where</span>(<span class="code-string">'field'</span>).<span class="code-function">matches</span>(<span class="code-string">/^x/</span>) <span class="code-comment">// Regex match</span>
+.<span class="code-function">where</span>(<span class="code-string">'field'</span>).<span class="code-function">exists</span>()      <span class="code-comment">// Field exists</span>
+.<span class="code-function">where</span>(<span class="code-string">'field'</span>).<span class="code-function">isNull</span>()      <span class="code-comment">// Is null</span></code></pre>
+
+            <h3>Aggregations</h3>
+            <pre><code><span class="code-keyword">const</span> count = db.<span class="code-function">query</span>(<span class="code-string">'users'</span>).<span class="code-function">count</span>();
+<span class="code-keyword">const</span> total = db.<span class="code-function">query</span>(<span class="code-string">'orders'</span>).<span class="code-function">sum</span>(<span class="code-string">'amount'</span>);
+<span class="code-keyword">const</span> average = db.<span class="code-function">query</span>(<span class="code-string">'orders'</span>).<span class="code-function">avg</span>(<span class="code-string">'amount'</span>);
+<span class="code-keyword">const</span> min = db.<span class="code-function">query</span>(<span class="code-string">'orders'</span>).<span class="code-function">min</span>(<span class="code-string">'amount'</span>);
+<span class="code-keyword">const</span> max = db.<span class="code-function">query</span>(<span class="code-string">'orders'</span>).<span class="code-function">max</span>(<span class="code-string">'amount'</span>);
+<span class="code-keyword">const</span> unique = db.<span class="code-function">query</span>(<span class="code-string">'users'</span>).<span class="code-function">distinct</span>(<span class="code-string">'role'</span>);
+<span class="code-keyword">const</span> grouped = db.<span class="code-function">query</span>(<span class="code-string">'users'</span>).<span class="code-function">groupBy</span>(<span class="code-string">'department'</span>);</code></pre>
+
+            <h3 id="simple-find">Simple Find Operations</h3>
+            <p>For simple searches where you don't need the complexity of the Query Cursor, you can use these helper methods:</p>
+            <pre><code><span class="code-comment">// Find first match with a function</span>
+<span class="code-keyword">const</span> user = <span class="code-keyword">await</span> db.<span class="code-function">find</span>(<span class="code-string">'users'</span>, u => u.age > <span class="code-number">18</span>);
+
+<span class="code-comment">// Find first match with an object (matcher)</span>
+<span class="code-keyword">const</span> admin = <span class="code-keyword">await</span> db.<span class="code-function">find</span>(<span class="code-string">'users'</span>, { role: <span class="code-string">'admin'</span> });
+
+<span class="code-comment">// Find all matches</span>
+<span class="code-keyword">const</span> adults = <span class="code-keyword">await</span> db.<span class="code-function">findAll</span>(<span class="code-string">'users'</span>, u => u.age >= <span class="code-number">18</span>);</code></pre>
+
+            <h3 id="pagination">Pagination</h3>
+            <p>Perfect for building API endpoints with paginated results:</p>
+            <pre><code><span class="code-comment">// paginate(path, pageNumber, itemsPerPage)</span>
+<span class="code-keyword">const</span> result = <span class="code-keyword">await</span> db.<span class="code-function">paginate</span>(<span class="code-string">'users'</span>, <span class="code-number">1</span>, <span class="code-number">20</span>);
+
+<span class="code-comment">// Result includes metadata:</span>
+<span class="code-comment">// { </span>
+<span class="code-comment">//   data: [...], </span>
+<span class="code-comment">//   meta: { total, pages, page, limit, hasNext, hasPrev } </span>
+<span class="code-comment">// }</span></code></pre>
+
+            <h2 id="batch-transactions">Batch Operations & Transactions</h2>
+
+            <h3>Batch Operations</h3>
+            <p>Execute multiple writes in a single I/O tick for maximum efficiency:</p>
+            <pre><code><span class="code-keyword">await</span> db.<span class="code-function">batch</span>([
+    { type: <span class="code-string">'set'</span>, path: <span class="code-string">'logs.1'</span>, value: <span class="code-string">'Log entry 1'</span> },
+    { type: <span class="code-string">'set'</span>, path: <span class="code-string">'logs.2'</span>, value: <span class="code-string">'Log entry 2'</span> },
+    { type: <span class="code-string">'delete'</span>, path: <span class="code-string">'temp.cache'</span> },
+    { type: <span class="code-string">'add'</span>, path: <span class="code-string">'stats.writes'</span>, value: <span class="code-number">3</span> }
+]);</code></pre>
+
+            <h3>Transactions</h3>
+            <p>Atomic read-modify-write with automatic rollback on error:</p>
+            <pre><code><span class="code-keyword">await</span> db.<span class="code-function">transaction</span>(<span class="code-keyword">async</span> (data) => {
+    <span class="code-keyword">if</span> (data.bank.balance >= <span class="code-number">100</span>) {
+        data.bank.balance -= <span class="code-number">100</span>;
+        data.users[<span class="code-string">'1'</span>].wallet += <span class="code-number">100</span>;
+    }
+    <span class="code-keyword">return</span> data;
+});</code></pre>
+
+            <h2 id="ttl">TTL (Time to Live)</h2>
+            <p>Auto-expire keys after a specified duration, similar to Redis:</p>
+            <pre><code><span class="code-comment">// Set with TTL (expires in 60 seconds)</span>
+<span class="code-keyword">await</span> db.<span class="code-function">setWithTTL</span>(<span class="code-string">'session.abc123'</span>, { userId: <span class="code-number">1</span> }, <span class="code-number">60</span>);
+
+<span class="code-comment">// Set TTL on existing key</span>
+db.<span class="code-function">setTTL</span>(<span class="code-string">'temp.data'</span>, <span class="code-number">300</span>);
+
+<span class="code-comment">// Get remaining TTL (-1 = no TTL, -2 = key doesn't exist)</span>
+<span class="code-keyword">const</span> ttl = <span class="code-keyword">await</span> db.<span class="code-function">getTTL</span>(<span class="code-string">'session.abc123'</span>);
+
+<span class="code-comment">// Listen for expirations</span>
+db.<span class="code-function">on</span>(<span class="code-string">'ttl:expired'</span>, ({ path }) => {
+    console.<span class="code-function">log</span>(<span class="code-string">'Key expired:'</span>, path);
+});</code></pre>
+
+            <h2 id="pubsub">Pub/Sub Events</h2>
+            <p>Subscribe to data changes with pattern matching:</p>
+            <pre><code><span class="code-comment">// Subscribe to all user changes</span>
+<span class="code-keyword">const</span> unsubscribe = db.<span class="code-function">subscribe</span>(<span class="code-string">'users.*'</span>, (newValue, oldValue) => {
+    console.<span class="code-function">log</span>(<span class="code-string">'User changed:'</span>, newValue);
+});
+
+<span class="code-comment">// Subscribe to specific path</span>
+db.<span class="code-function">subscribe</span>(<span class="code-string">'config.theme'</span>, (value) => {
+    <span class="code-function">applyTheme</span>(value);
+});
+
+<span class="code-comment">// Wildcards supported</span>
+db.<span class="code-function">subscribe</span>(<span class="code-string">'**'</span>, (value, old) => {
+    <span class="code-comment">// Called for ALL changes</span>
+});
+
+<span class="code-comment">// Unsubscribe when done</span>
+<span class="code-function">unsubscribe</span>();</code></pre>
+
+            <h2 id="encryption">Encryption</h2>
+            <p>Enable AES-256-GCM encryption for data at rest:</p>
+            <pre><code><span class="code-keyword">const</span> db = <span class="code-keyword">new</span> <span class="code-function">JSONDatabase</span>(<span class="code-string">'secure.json'</span>, {
+    encryptionKey: <span class="code-string">'your-32-character-secret-key!!'</span>
+});
+
+<span class="code-comment">// All data is encrypted before writing to disk</span>
+<span class="code-keyword">await</span> db.<span class="code-function">set</span>(<span class="code-string">'secrets'</span>, { apiKey: <span class="code-string">'xyz123'</span> });</code></pre>
+
+            <div class="info-box danger">
+                <div class="info-box-title">🔐 Security Note</div>
+                <p>The encryption key must be exactly 32 characters. Store it securely (e.g., environment variables). Never commit it to version control!</p>
+            </div>
+
+            <h2 id="snapshots">Snapshots</h2>
+            <p>Create and restore database backups:</p>
+            <pre><code><span class="code-comment">// Create a snapshot</span>
+<span class="code-keyword">const</span> backupPath = <span class="code-keyword">await</span> db.<span class="code-function">createSnapshot</span>(<span class="code-string">'daily'</span>);
+console.<span class="code-function">log</span>(<span class="code-string">'Backup saved to:'</span>, backupPath);
+
+<span class="code-comment">// Restore from snapshot</span>
+<span class="code-keyword">await</span> db.<span class="code-function">restoreSnapshot</span>(backupPath);</code></pre>
+
+            <h2 id="utility-methods">Utility Methods</h2>
+            <p>Various helper methods for managing your database:</p>
+            <pre><code><span class="code-comment">// Get all keys at a path</span>
+<span class="code-keyword">const</span> keys = <span class="code-keyword">await</span> db.<span class="code-function">keys</span>(<span class="code-string">'users'</span>);
+
+<span class="code-comment">// Get all values at a path</span>
+<span class="code-keyword">const</span> values = <span class="code-keyword">await</span> db.<span class="code-function">values</span>(<span class="code-string">'users'</span>);
+
+<span class="code-comment">// Count items at a path</span>
+<span class="code-keyword">const</span> count = <span class="code-keyword">await</span> db.<span class="code-function">count</span>(<span class="code-string">'users'</span>);
+
+<span class="code-comment">// Get DB stats (size, keys, indices)</span>
+<span class="code-keyword">const</span> stats = <span class="code-keyword">await</span> db.<span class="code-function">stats</span>();
+
+<span class="code-comment">// Clear ALL data (dangerous!)</span>
+<span class="code-keyword">await</span> db.<span class="code-function">clear</span>();
+
+<span class="code-comment">// Force an immediate save to disk</span>
+<span class="code-keyword">await</span> db.<span class="code-function">save</span>();
+
+<span class="code-comment">// Gracefully close the database</span>
+<span class="code-keyword">await</span> db.<span class="code-function">close</span>();</code></pre>
+            <p>Intercept and modify operations before/after they happen:</p>
+            <pre><code><span class="code-comment">// Before hook - modify data before write</span>
+db.<span class="code-function">before</span>(<span class="code-string">'set'</span>, <span class="code-string">'users.*'</span>, (ctx) => {
+    ctx.value.updatedAt = Date.<span class="code-function">now</span>();
+    <span class="code-keyword">return</span> ctx;
+});
+
+<span class="code-comment">// After hook - react after write</span>
+db.<span class="code-function">after</span>(<span class="code-string">'set'</span>, <span class="code-string">'users.*'</span>, (ctx) => {
+    console.<span class="code-function">log</span>(<span class="code-string">'User updated:'</span>, ctx.path);
+    <span class="code-keyword">return</span> ctx;
+});</code></pre>
+
+            <h2 id="tutorial">Beginner's Masterclass: Building a Task Manager</h2>
+            <p>If you're new to coding or databases, this step-by-step guide will help you build a real-world Task Manager application from scratch.</p>
+
+            <h3>1. Setting up the Project</h3>
+            <p>First, create a new folder and initialize it. Open your terminal and type:</p>
+            <pre><code>mkdir task-manager
+cd task-manager
+bun init -y
+bun add jsondb-high</code></pre>
+
+            <h3>2. Creating your first File</h3>
+            <p>Create a file named <code>app.ts</code> and add the following code to initialize your database:</p>
+            <pre><code>import JSONDatabase from 'jsondb-high';
+
+// This creates a file named 'tasks.json' in your folder if it doesn't exist
+const db = new JSONDatabase('tasks.json', {
+    wal: true // We use WAL mode to make sure our tasks are never lost
+});</code></pre>
+
+            <h3>3. Adding Tasks</h3>
+            <p>To add a task, we use the <code>set</code> method. We'll store each task under a 'tasks' category with a unique ID.</p>
+            <pre><code>async function addTask(id: string, title: string) {
+    await db.set(`tasks.${id}`, {
+        title: title,
+        completed: false,
+        createdAt: Date.now()
+    });
+    console.log(`Task "${title}" added!`);
+}
+
+// Let's add some tasks
+await addTask('1', 'Buy milk');
+await addTask('2', 'Learn Rust');</code></pre>
+
+            <h3>4. Reading and Listing Tasks</h3>
+            <p>To see your tasks, you can fetch all values from the 'tasks' path.</p>
+            <pre><code>async function listTasks() {
+    const tasks = await db.values('tasks');
+    console.log('--- My To-Do List ---');
+    tasks.forEach((task: any, index: number) => {
+        const status = task.completed ? '[X]' : '[ ]';
+        console.log(`${index + 1}. ${status} ${task.title}`);
+    });
+}
+
+await listTasks();</code></pre>
+
+            <h3>5. Marking a Task as Completed</h3>
+            <p>You can update a specific part of a task without affecting the rest.</p>
+            <pre><code>async function completeTask(id: string) {
+    // Check if the task exists first
+    if (await db.has(`tasks.${id}`)) {
+        await db.set(`tasks.${id}.completed`, true);
+        console.log(`Task ${id} completed!`);
+    }
+}
+
+await completeTask('1');
+await listTasks();</code></pre>
+
+            <h3>6. Finding Specific Tasks</h3>
+            <p>Want to find all tasks that AREN'T finished? Use the Query API.</p>
+            <pre><code>async function showPendingTasks() {
+    const pending = await db.query('tasks')
+        .where('completed').eq(false)
+        .exec();
+    console.log('Pending Tasks:', pending);
+}
+
+await showPendingTasks();</code></pre>
+
+            <div class="info-box tip">
+                <div class="info-box-title">🏆 Challenge</div>
+                <p>Try adding a <code>priority</code> field to your tasks (1, 2, or 3) and use <code>.sort({ priority: 1 })</code> in your query to show high-priority tasks first!</p>
+            </div>
+
+            <h2 id="example-user-system">Example: User Management System</h2>
+            <pre><code><span class="code-keyword">import</span> JSONDatabase <span class="code-keyword">from</span> <span class="code-string">'jsondb-high'</span>;
+
+<span class="code-keyword">const</span> db = <span class="code-keyword">new</span> <span class="code-function">JSONDatabase</span>(<span class="code-string">'users.json'</span>, {
+    indices: [{ name: <span class="code-string">'email'</span>, path: <span class="code-string">'users'</span>, field: <span class="code-string">'email'</span> }]
+});
+
+<span class="code-comment">// Auto-add timestamps</span>
+db.<span class="code-function">before</span>(<span class="code-string">'set'</span>, <span class="code-string">'users.*'</span>, (ctx) => {
+    ctx.value.updatedAt = Date.<span class="code-function">now</span>();
+    <span class="code-keyword">if</span> (!ctx.value.createdAt) ctx.value.createdAt = Date.<span class="code-function">now</span>();
+    <span class="code-keyword">return</span> ctx;
+});
+
+<span class="code-comment">// Create user</span>
+<span class="code-keyword">async function</span> <span class="code-function">createUser</span>(id: <span class="code-variable">string</span>, data: <span class="code-variable">object</span>) {
+    <span class="code-keyword">await</span> db.<span class="code-function">set</span>(<span class="code-string">`users.</span>${id}<span class="code-string">`</span>, data);
+}
+
+<span class="code-comment">// Find by email</span>
+<span class="code-keyword">async function</span> <span class="code-function">findByEmail</span>(email: <span class="code-variable">string</span>) {
+    <span class="code-keyword">return</span> <span class="code-keyword">await</span> db.<span class="code-function">findByIndex</span>(<span class="code-string">'email'</span>, email);
+}
+
+<span class="code-comment">// Get all admins</span>
+<span class="code-keyword">async function</span> <span class="code-function">getAdmins</span>() {
+    <span class="code-keyword">return</span> <span class="code-keyword">await</span> db.<span class="code-function">query</span>(<span class="code-string">'users'</span>)
+        .<span class="code-function">where</span>(<span class="code-string">'role'</span>).<span class="code-function">eq</span>(<span class="code-string">'admin'</span>)
+        .<span class="code-function">exec</span>();
+}</code></pre>
+
+            <h2 id="example-session">Example: Session Store</h2>
+            <pre><code><span class="code-keyword">import</span> JSONDatabase <span class="code-keyword">from</span> <span class="code-string">'jsondb-high'</span>;
+<span class="code-keyword">import</span> crypto <span class="code-keyword">from</span> <span class="code-string">'crypto'</span>;
+
+<span class="code-keyword">const</span> sessions = <span class="code-keyword">new</span> <span class="code-function">JSONDatabase</span>(<span class="code-string">'sessions.json'</span>);
+
+<span class="code-comment">// Clean up expired sessions</span>
+sessions.<span class="code-function">on</span>(<span class="code-string">'ttl:expired'</span>, ({ path }) => {
+    console.<span class="code-function">log</span>(<span class="code-string">'Session expired:'</span>, path);
+});
+
+<span class="code-keyword">async function</span> <span class="code-function">createSession</span>(userId: <span class="code-variable">string</span>) {
+    <span class="code-keyword">const</span> token = crypto.<span class="code-function">randomBytes</span>(<span class="code-number">32</span>).<span class="code-function">toString</span>(<span class="code-string">'hex'</span>);
+    <span class="code-keyword">await</span> sessions.<span class="code-function">setWithTTL</span>(<span class="code-string">`session.</span>${token}<span class="code-string">`</span>, {
+        userId,
+        createdAt: Date.<span class="code-function">now</span>()
+    }, <span class="code-number">3600</span>); <span class="code-comment">// 1 hour TTL</span>
+    <span class="code-keyword">return</span> token;
+}
+
+<span class="code-keyword">async function</span> <span class="code-function">validateSession</span>(token: <span class="code-variable">string</span>) {
+    <span class="code-keyword">return</span> <span class="code-keyword">await</span> sessions.<span class="code-function">get</span>(<span class="code-string">`session.</span>${token}<span class="code-string">`</span>);
+}</code></pre>
+
+            <h2 id="example-cache">Example: Caching Layer</h2>
+            <pre><code><span class="code-keyword">import</span> JSONDatabase <span class="code-keyword">from</span> <span class="code-string">'jsondb-high'</span>;
+
+<span class="code-keyword">const</span> cache = <span class="code-keyword">new</span> <span class="code-function">JSONDatabase</span>(<span class="code-string">'cache.json'</span>);
+
+<span class="code-keyword">async function</span> <span class="code-function">cachedFetch</span>(key: <span class="code-variable">string</span>, fetcher: () => <span class="code-variable">Promise</span><<span class="code-variable">unknown</span>>, ttl = <span class="code-number">300</span>) {
+    <span class="code-comment">// Try cache first</span>
+    <span class="code-keyword">const</span> cached = <span class="code-keyword">await</span> cache.<span class="code-function">get</span>(<span class="code-string">`cache.</span>${key}<span class="code-string">`</span>);
+    <span class="code-keyword">if</span> (cached) <span class="code-keyword">return</span> cached;
+    
+    <span class="code-comment">// Fetch and cache</span>
+    <span class="code-keyword">const</span> data = <span class="code-keyword">await</span> <span class="code-function">fetcher</span>();
+    <span class="code-keyword">await</span> cache.<span class="code-function">setWithTTL</span>(<span class="code-string">`cache.</span>${key}<span class="code-string">`</span>, data, ttl);
+    <span class="code-keyword">return</span> data;
+}
+
+<span class="code-comment">// Usage</span>
+<span class="code-keyword">const</span> userData = <span class="code-keyword">await</span> <span class="code-function">cachedFetch</span>(<span class="code-string">'user:123'</span>, <span class="code-keyword">async</span> () => {
+    <span class="code-keyword">return</span> <span class="code-keyword">await</span> <span class="code-function">fetch</span>(<span class="code-string">'https://api.example.com/user/123'</span>).<span class="code-function">then</span>(r => r.<span class="code-function">json</span>());
+}, <span class="code-number">600</span>);</code></pre>
+
+            <div class="info-box tip">
+                <div class="info-box-title">🚀 Next Steps</div>
+                <p>Now that you understand the basics, check out the <a href="benchmarks.html">Benchmarks</a> to see performance numbers, or explore the <a href="https://github.com/sethunthunder111/jsondb-high" target="_blank">GitHub repository</a> for more examples.</p>
+            </div>
+
+        </main>
+    </div>
+
+    <button class="sidebar-toggle" aria-label="Toggle sidebar">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+    </button>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-main">
+                <div class="footer-brand"><a href="index.html" class="footer-logo"><span class="logo-bracket">{</span><span class="logo-text">jsondb</span><span class="logo-highlight">-high</span><span class="logo-bracket">}</span></a><p class="footer-tagline">A blazing fast, Rust-powered JSON database for Node.js</p></div>
+                <div class="footer-links">
+                    <div class="footer-column"><h4>Documentation</h4><a href="#getting-started">Getting Started</a><a href="#api-reference">API Reference</a><a href="#examples">Examples</a></div>
+                    <div class="footer-column"><h4>Resources</h4><a href="benchmarks.html">Benchmarks</a><a href="https://github.com/sethunthunder111/jsondb-high" target="_blank">GitHub</a></div>
+                    <div class="footer-column"><h4>Community</h4><a href="https://github.com/sethunthunder111/jsondb-high/blob/main/CONTRIBUTING.md" target="_blank">Contributing</a><a href="https://github.com/sethunthunder111/jsondb-high/blob/main/LICENSE" target="_blank">License</a></div>
+                </div>
+            </div>
+            <div class="footer-bottom"><p class="footer-copyright">© 2026 jsondb-high. MIT License.</p><div class="footer-tech"><span>Built with</span><span class="tech-icon">🦀 Rust</span><span class="tech-icon">💚 Node.js</span></div></div>
+        </div>
+    </footer>
+
+    <script src="https://unpkg.com/lenis@1.1.18/dist/lenis.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
