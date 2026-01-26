@@ -7,7 +7,7 @@
  * - Throughput characteristics
  */
 
-import { JSONDatabase } from '../index';
+import { JSONDatabase } from '../index.ts';
 import { existsSync, unlinkSync, writeFileSync } from 'fs';
 
 // ============================================

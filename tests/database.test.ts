@@ -1,4 +1,4 @@
-import { JSONDatabase } from '../index';
+import { JSONDatabase } from '../index.ts';
 import { unlinkSync, existsSync } from 'fs';
 
 const TEST_DB = 'test_db.json';

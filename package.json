@@ -1,8 +1,8 @@
 {
   "name": "jsondb-high",
-  "version": "4.0.12",
+  "version": "4.0.13",
   "description": "A blazing fast, Rust-powered in-memory JSON database for Node.js with WAL, Encryption, and Advanced Query support.",
-  "main": "index.js",
+  "main": "index.ts",
   "types": "index.d.ts",
   "scripts": {
     "build": "node scripts/build-on-demand.js",
