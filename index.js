@@ -75,6 +75,20 @@ switch (platform) {
           loadError = e
         }
         break
+      case 'ia32':
+        localFileExisted = existsSync(
+          join(__dirname, 'jsondb-high.win32-ia32-msvc.node')
+        )
+        try {
+          if (localFileExisted) {
+            nativeBinding = require('./jsondb-high.win32-ia32-msvc.node')
+          } else {
+            nativeBinding = require('jsondb-high-win32-ia32-msvc')
+          }
+        } catch (e) {
+          loadError = e
+        }
+        break
       case 'arm64':
         localFileExisted = existsSync(
           join(__dirname, 'jsondb-high.win32-arm64-msvc.node')
