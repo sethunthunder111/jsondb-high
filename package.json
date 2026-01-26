@@ -19,7 +19,7 @@
   "scripts": {
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
-    "artifacts": "napi artifacts",
+    "artifacts": "bun scripts/move-artifacts.ts",
     "test": "bun tests/database.test.ts",
     "bench": "bun benchmarks/run.ts",
     "clean": "bun scripts/clean.ts",
