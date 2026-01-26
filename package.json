@@ -33,7 +33,7 @@
   "bugs": {
     "url": "https://github.com/sethunthunder111/jsondb-high/issues"
   },
-  "homepage": "https://github.com/sethunthunder111/jsondb-high#readme",
+  "homepage": "https://sethunthunder111.github.io/jsondb-high",
   "devDependencies": {
     "@napi-rs/cli": "^2.18.4",
     "@types/bun": "latest",
