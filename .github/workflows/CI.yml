@@ -59,20 +59,12 @@ jobs:
             target: aarch64-unknown-linux-gnu
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
             build: bun run build -- --target aarch64-unknown-linux-gnu
-          - host: ubuntu-latest
-            target: armv7-unknown-linux-gnueabihf
-            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-armhf
-            build: bun run build -- --target armv7-unknown-linux-gnueabihf
 
           # Linux Targets (MUSL)
           - host: ubuntu-latest
             target: x86_64-unknown-linux-musl
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
             build: bun run build -- --target x86_64-unknown-linux-musl
-          - host: ubuntu-latest
-            target: aarch64-unknown-linux-musl
-            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
-            build: bun run build -- --target aarch64-unknown-linux-musl
 
           # Android Targets
           - host: ubuntu-latest
@@ -85,10 +77,6 @@ jobs:
             build: bun run build -- --target armv7-linux-androideabi
 
           # FreeBSD Targets
-          - host: ubuntu-latest
-            target: x86_64-unknown-freebsd
-            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian
-            build: bun run build -- --target x86_64-unknown-freebsd
 
     steps:
       - uses: actions/checkout@v4
@@ -119,11 +107,14 @@ jobs:
           run: |
             # --- FIX: Update Rust to satisfy napi-build ---
             rustup update stable
+            rustup target add ${{ matrix.settings.target }}
             
-            # --- FIX: Ensure Android NDK variables exist for Android targets ---
-            if [[ "${{ matrix.settings.target }}" == *"android"* ]]; then
-              export ANDROID_NDK_LATEST_HOME=$ANDROID_NDK_HOME
-            fi
+            # --- FIX: Ensure Android NDK variables exist for Android targets (sh compatible) ---
+            case "${{ matrix.settings.target }}" in
+              *android*)
+                export ANDROID_NDK_LATEST_HOME=$ANDROID_NDK_HOME
+                ;;
+            esac
             
             # We use npm here because Bun support for Alpine (Musl) and ARMv7 is limited
             npm install
@@ -140,6 +131,7 @@ jobs:
   universal-mac:
     name: Build Universal macOS
     needs: build
+    if: always() && !cancelled() && needs.build.result != 'cancelled'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
