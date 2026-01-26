@@ -49,7 +49,7 @@
   },
   "homepage": "https://github.com/sethunthunder111/jsondb-high#readme",
   "devDependencies": {
-    "@napi-rs/cli": "2.18.4",
+    "@napi-rs/cli": "^2.18.4",
     "@types/bun": "latest",
     "@types/node": "^20.0.0"
   },
@@ -61,7 +61,11 @@
   },
   "optionalDependencies": {
     "jsondb-high-win32-x64-msvc": "4.0.1",
+    "jsondb-high-win32-arm64-msvc": "4.0.1",
     "jsondb-high-darwin-x64": "4.0.1",
-    "jsondb-high-linux-x64-gnu": "4.0.1"
+    "jsondb-high-darwin-arm64": "4.0.1",
+    "jsondb-high-linux-x64-gnu": "4.0.1",
+    "jsondb-high-linux-arm64-gnu": "4.0.1",
+    "jsondb-high-linux-x64-musl": "4.0.1"
   }
 }
