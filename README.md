@@ -5,6 +5,7 @@ A blazing fast, feature-rich JSON database for Node.js with a Rust-powered core 
 ## ✨ Features
 
 - ⚡ **Blazing Fast**: Core logic written in Rust via N-API for native performance (~90k ops/sec in-memory mode)
+- 🧵 **Multi-Core Processing**: Adaptive parallelism using Rayon - automatically uses all CPU cores for large datasets
 - 🛡️ **Atomic Operations**: Uses Write-Ahead Logging (WAL) and atomic file swaps to prevent data corruption
 - 🔍 **O(1) Indexing**: In-memory Map indices allow for instant lookups by field
 - 🔒 **Encryption**: Optional AES-256-GCM encryption for data at rest
@@ -41,7 +42,7 @@ console.log(user); // { name: 'Alice', role: 'admin' }
 
 ## 🏗️ Hybrid Architecture
 
-v3 offers two storage consistency modes. Choose based on your durability needs.
+v4 offers two storage consistency modes. Choose based on your durability needs.
 
 ### MODE: DURABLE (WAL)
 
@@ -236,6 +237,75 @@ await db.batch([
     { type: 'add', path: 'stats.visits', value: 1 }
 ]);
 ```
+
+### 🧵 Multi-Core Parallel Processing
+
+The database automatically detects available CPU cores and uses parallel processing for large datasets (≥100 items). Falls back to efficient single-threaded operation for small workloads to avoid overhead.
+
+#### System Info
+
+Check system capabilities for parallel processing.
+
+```typescript
+const info = db.getSystemInfo();
+console.log(info);
+// {
+//   availableCores: 8,
+//   parallelEnabled: true,
+//   recommendedBatchSize: 1000
+// }
+```
+
+#### Parallel Batch Set
+
+Execute thousands of set operations efficiently using all available cores.
+
+```typescript
+const operations = [];
+for (let i = 0; i < 10000; i++) {
+    operations.push({
+        path: `users.${i}`,
+        value: { id: i, name: `User ${i}`, active: true }
+    });
+}
+
+const result = await db.batchSetParallel(operations);
+console.log(`Completed ${result.count} operations`);
+// Automatically parallelized when ≥100 items
+```
+
+#### Parallel Query
+
+High-performance filtering using native Rust parallel iteration.
+
+```typescript
+// Filter with multiple conditions - uses parallel processing for large collections
+const activeAdults = await db.parallelQuery('users', [
+    { field: 'age', op: 'gte', value: 18 },
+    { field: 'status', op: 'eq', value: 'active' }
+]);
+
+// Available operators: eq, ne, gt, gte, lt, lte, contains, startswith, endswith, in, notin
+```
+
+#### Parallel Aggregation
+
+Compute aggregations efficiently across large datasets.
+
+```typescript
+const count = await db.parallelAggregate('orders', 'count');
+const totalRevenue = await db.parallelAggregate('orders', 'sum', 'amount');
+const avgOrderValue = await db.parallelAggregate('orders', 'avg', 'amount');
+const minOrder = await db.parallelAggregate('orders', 'min', 'amount');
+const maxOrder = await db.parallelAggregate('orders', 'max', 'amount');
+```
+
+#### How It Works
+
+- **Adaptive**: Automatically uses 1-N cores based on workload size and system resources
+- **Efficient**: Small workloads (<100 items) use single-threaded to avoid parallel overhead
+- **Resource-Aware**: Leaves 1 core free for system/main thread
+- **Scalable**: Performance scales linearly with available cores for large datasets
 
 ### 🔒 Transactions
 

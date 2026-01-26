@@ -263,6 +263,77 @@ async function runBatchBenchmarks(db: JSONDatabase, mode: string) {
     });
 }
 
+async function runParallelBenchmarks(db: JSONDatabase, mode: string) {
+    console.log(`\n🧵 Parallel Processing (${mode})`);
+    console.log('─'.repeat(50));
+
+    // Show system info
+    const sysInfo = db.getSystemInfo();
+    console.log(`  System: ${sysInfo.availableCores} cores, parallel=${sysInfo.parallelEnabled}`);
+
+    // Setup large dataset for parallel benchmarks
+    const largeUsers: Record<string, { id: number; name: string; age: number; active: boolean }> = {};
+    for (let i = 0; i < 5000; i++) {
+        largeUsers[`user_${i}`] = {
+            id: i,
+            name: `User ${i}`,
+            age: 18 + (i % 60),
+            active: i % 2 === 0
+        };
+    }
+    await db.set('parallel_users', largeUsers);
+
+    // Parallel Batch Set (500 items)
+    await benchmark(`parallelBatchSet (500 ops)`, mode, ITERATIONS / 100, async () => {
+        const ops: Array<{ path: string; value: unknown }> = [];
+        for (let i = 0; i < 500; i++) {
+            ops.push({
+                path: `parallel_batch.item_${i}`,
+                value: { id: i, data: `test_${i}` }
+            });
+        }
+        await db.batchSetParallel(ops);
+    });
+
+    // Parallel Query vs Regular Query
+    await benchmark(`parallelQuery (2 filters)`, mode, ITERATIONS / 10, async () => {
+        await db.parallelQuery('parallel_users', [
+            { field: 'age', op: 'gte', value: 40 },
+            { field: 'active', op: 'eq', value: true }
+        ]);
+    });
+
+    // Compare with regular query
+    await benchmark(`regularQuery (2 filters)`, mode, ITERATIONS / 10, async () => {
+        await db.query<{ age: number; active: boolean }>('parallel_users')
+            .where('age').gte(40)
+            .filter((u) => u.active === true)
+            .exec();
+    });
+
+    // Parallel Aggregations
+    await benchmark(`parallelAggregate (count)`, mode, ITERATIONS, async () => {
+        await db.parallelAggregate('parallel_users', 'count');
+    });
+
+    await benchmark(`parallelAggregate (sum)`, mode, ITERATIONS, async () => {
+        await db.parallelAggregate('parallel_users', 'sum', 'age');
+    });
+
+    await benchmark(`parallelAggregate (avg)`, mode, ITERATIONS, async () => {
+        await db.parallelAggregate('parallel_users', 'avg', 'age');
+    });
+
+    // Compare with regular aggregation
+    await benchmark(`regularAggregate (sum)`, mode, ITERATIONS, () => {
+        db.query('parallel_users').sum('age');
+    });
+
+    // Cleanup
+    await db.delete('parallel_users');
+    await db.delete('parallel_batch');
+}
+
 // ============================================
 // Results Generation
 // ============================================
@@ -384,6 +455,7 @@ async function main() {
     cleanup();
     const dbInMemory2 = new JSONDatabase(DB_FILE, { wal: false });
     await runBatchBenchmarks(dbInMemory2, 'In-Memory');
+    await runParallelBenchmarks(dbInMemory2, 'In-Memory');
     await dbInMemory2.close();
 
     // WAL Mode
@@ -400,6 +472,7 @@ async function main() {
     cleanup();
     const dbWal2 = new JSONDatabase(DB_FILE, { wal: true });
     await runBatchBenchmarks(dbWal2, 'WAL');
+    await runParallelBenchmarks(dbWal2, 'WAL');
     await dbWal2.close();
 
     cleanup();

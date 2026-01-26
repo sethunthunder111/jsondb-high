@@ -64,6 +64,37 @@ export interface SortOptions {
 }
 
 // ============================================
+// PARALLEL PROCESSING INTERFACES
+// ============================================
+
+export interface SystemInfo {
+    availableCores: number;
+    parallelEnabled: boolean;
+    recommendedBatchSize: number;
+}
+
+export interface ParallelConfig {
+    /** Enable parallel processing (auto-detected by default) */
+    enabled?: boolean;
+    /** Minimum items before using parallel processing (default: 100) */
+    threshold?: number;
+    /** Maximum threads to use (default: auto-detected cores - 1) */
+    maxThreads?: number;
+}
+
+export interface QueryFilter {
+    field: string;
+    op: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'contains' | 'startswith' | 'endswith' | 'in' | 'notin';
+    value: unknown;
+}
+
+export interface ParallelResult {
+    success: boolean;
+    count: number;
+    error?: string;
+}
+
+// ============================================
 // UTILITY FUNCTIONS
 // ============================================
 
@@ -1110,6 +1141,114 @@ export class JSONDatabase extends EventEmitter {
             subscriptions: Array.from(this.subscriptions.values())
                 .reduce((acc, set) => acc + set.size, 0)
         };
+    }
+
+    // ============================================
+    // PARALLEL PROCESSING
+    // ============================================
+
+    /**
+     * Get system resource information for parallel processing decisions
+     * Returns info about available cores and whether parallel mode is enabled
+     */
+    public getSystemInfo(): SystemInfo {
+        const nativeInfo = this.native.getSystemInfo();
+        return {
+            availableCores: nativeInfo.availableCores,
+            parallelEnabled: nativeInfo.parallelEnabled,
+            recommendedBatchSize: nativeInfo.recommendedBatchSize
+        };
+    }
+
+    /**
+     * Execute batch set operations with automatic parallel optimization.
+     * Uses multiple CPU cores when workload is large enough (≥100 items).
+     * Falls back to sequential processing for small batches to avoid overhead.
+     * 
+     * @param operations - Array of {path, value} objects to set
+     * @returns ParallelResult with success status and count of operations completed
+     * 
+     * @example
+     * ```typescript
+     * const result = await db.batchSetParallel([
+     *     { path: 'users.1', value: { name: 'Alice' } },
+     *     { path: 'users.2', value: { name: 'Bob' } },
+     *     // ... potentially thousands more
+     * ]);
+     * console.log(`Completed ${result.count} operations`);
+     * ```
+     */
+    public async batchSetParallel(
+        operations: Array<{ path: string; value: unknown }>
+    ): Promise<ParallelResult> {
+        // Convert to tuple array for native call
+        const tuples: Array<[string, unknown]> = operations.map(op => [op.path, op.value]);
+        
+        const result = this.native.batchSetParallel(tuples);
+        
+        // Trigger save after batch
+        this.triggerSave();
+        
+        // Emit batch event
+        this.emit('batch', { 
+            operations: operations.map(op => ({ type: 'set', path: op.path, value: op.value }))
+        });
+        
+        return {
+            success: result.success,
+            count: result.count,
+            error: result.error
+        };
+    }
+
+    /**
+     * Execute parallel query with native Rust filtering.
+     * More efficient than JS-based queries for large datasets (≥100 items).
+     * Automatically uses parallel iteration when beneficial.
+     * 
+     * @param path - Path to the collection to query
+     * @param filters - Array of filter conditions to apply
+     * @returns Filtered results array
+     * 
+     * @example
+     * ```typescript
+     * const adults = await db.parallelQuery('users', [
+     *     { field: 'age', op: 'gte', value: 18 },
+     *     { field: 'status', op: 'eq', value: 'active' }
+     * ]);
+     * ```
+     */
+    public async parallelQuery<T = unknown>(
+        path: string, 
+        filters: QueryFilter[]
+    ): Promise<T[]> {
+        const result = this.native.parallelQuery(path, filters);
+        return result as T[];
+    }
+
+    /**
+     * Parallel aggregation operations using native Rust processing.
+     * Efficiently computes sum, avg, min, max, or count over large datasets.
+     * 
+     * @param path - Path to the collection
+     * @param operation - Aggregation type: 'sum', 'avg', 'min', 'max', or 'count'
+     * @param field - Optional field to aggregate (required for sum, avg, min, max)
+     * @returns Aggregation result or null if no data
+     * 
+     * @example
+     * ```typescript
+     * const totalSales = await db.parallelAggregate('orders', 'sum', 'amount');
+     * const avgAge = await db.parallelAggregate('users', 'avg', 'age');
+     * const userCount = await db.parallelAggregate('users', 'count');
+     * ```
+     */
+    public async parallelAggregate(
+        path: string,
+        operation: 'sum' | 'avg' | 'min' | 'max' | 'count',
+        field?: string
+    ): Promise<number | null> {
+        const result = this.native.parallelAggregate(path, operation, field);
+        return result === null || result === undefined ? null : result;
     }
 }
 

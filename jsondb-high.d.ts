@@ -57,6 +57,37 @@ export interface SortOptions {
 }
 
 // ============================================
+// Parallel Processing Interfaces
+// ============================================
+
+export interface SystemInfo {
+    availableCores: number;
+    parallelEnabled: boolean;
+    recommendedBatchSize: number;
+}
+
+export interface ParallelConfig {
+    /** Enable parallel processing (auto-detected by default) */
+    enabled?: boolean;
+    /** Minimum items before using parallel processing (default: 100) */
+    threshold?: number;
+    /** Maximum threads to use (default: auto-detected cores - 1) */
+    maxThreads?: number;
+}
+
+export interface QueryFilter {
+    field: string;
+    op: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'contains' | 'startswith' | 'endswith' | 'in' | 'notin';
+    value: unknown;
+}
+
+export interface ParallelResult {
+    success: boolean;
+    count: number;
+    error?: string;
+}
+
+// ============================================
 // Query Builder Classes
 // ============================================
 
@@ -176,6 +207,32 @@ export declare class JSONDatabase extends EventEmitter {
         ttlKeys: number;
         subscriptions: number;
     }>;
+
+    // ============================================
+    // Parallel Processing
+    // ============================================
+    
+    /**
+     * Get system resource information for parallel processing decisions
+     */
+    getSystemInfo(): SystemInfo;
+
+    /**
+     * Execute batch set operations with automatic parallel optimization
+     * Uses multiple cores when workload is large enough
+     */
+    batchSetParallel(operations: Array<{ path: string; value: unknown }>): Promise<ParallelResult>;
+
+    /**
+     * Execute parallel query with native Rust filtering
+     * More efficient than JS-based queries for large datasets
+     */
+    parallelQuery<T = unknown>(path: string, filters: QueryFilter[]): Promise<T[]>;
+
+    /**
+     * Parallel aggregation operations (sum, avg, min, max, count)
+     */
+    parallelAggregate(path: string, operation: 'sum' | 'avg' | 'min' | 'max' | 'count', field?: string): Promise<number | null>;
 }
 
 export default JSONDatabase;

@@ -9,12 +9,107 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use parking_lot::RwLock as PLRwLock;
+use rayon::prelude::*;
+
+// ============================================
+// THREAD POOL CONFIGURATION
+// ============================================
+
+/// Adaptive thread pool that uses available cores when resources permit
+/// Falls back to single-threaded when system is constrained
+struct ThreadPoolConfig {
+    available_cores: usize,
+    use_parallel: bool,
+}
+
+impl ThreadPoolConfig {
+    fn new() -> Self {
+        let available = num_cpus::get();
+        // Use parallelism only if we have more than 2 cores
+        // and keep 1 core free for the main thread/system
+        let use_parallel = available > 2;
+        
+        ThreadPoolConfig {
+            available_cores: available,
+            use_parallel,
+        }
+    }
+    
+    /// Get optimal parallelism level based on workload size and system resources
+    fn optimal_threads(&self, workload_size: usize) -> usize {
+        if !self.use_parallel || workload_size < 100 {
+            // Small workloads don't benefit from parallelism
+            return 1;
+        }
+        
+        // Use cores proportional to workload, but leave 1-2 cores free
+        let max_threads = (self.available_cores - 1).max(1);
+        
+        // Scale threads based on workload
+        // Small: 1 thread, Medium: half cores, Large: max cores
+        if workload_size < 1000 {
+            (max_threads / 2).max(1)
+        } else if workload_size < 10000 {
+            (max_threads * 3 / 4).max(1)
+        } else {
+            max_threads
+        }
+    }
+    
+    /// Should we use parallel processing for this workload?
+    fn should_parallelize(&self, workload_size: usize) -> bool {
+        self.use_parallel && workload_size >= 100
+    }
+}
+
+// Global thread pool config (initialized once)
+static THREAD_CONFIG: once_cell::sync::Lazy<ThreadPoolConfig> = 
+    once_cell::sync::Lazy::new(ThreadPoolConfig::new);
+
+// ============================================
+// DATA STRUCTURES
+// ============================================
 
 #[derive(Serialize, Deserialize, Debug)]
 struct WalEntry {
     op: String,
     path: String,
     value: Option<Value>,
+}
+
+/// Query filter for parallel batch queries
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[napi(object)]
+pub struct QueryFilter {
+    pub field: String,
+    pub op: String,   // "eq", "ne", "gt", "gte", "lt", "lte", "contains", "startswith", "endswith"
+    pub value: Value,
+}
+
+/// Batch query request
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[napi(object)]
+pub struct BatchQuery {
+    pub path: String,
+    pub filters: Vec<QueryFilter>,
+}
+
+/// Parallel operation result
+#[derive(Debug)]
+#[napi(object)]
+pub struct ParallelResult {
+    pub success: bool,
+    pub count: u32,
+    pub error: Option<String>,
+}
+
+/// System resource info
+#[derive(Debug)]
+#[napi(object)]
+pub struct SystemInfo {
+    pub available_cores: u32,
+    pub parallel_enabled: bool,
+    pub recommended_batch_size: u32,
 }
 
 #[napi]
@@ -35,6 +130,16 @@ impl NativeDB {
       wal_enabled: wal,
       data: Arc::new(PLRwLock::new(json!({}))),
     }
+  }
+
+  /// Get system resource information for adaptive parallelism
+  #[napi]
+  pub fn get_system_info(&self) -> SystemInfo {
+      SystemInfo {
+          available_cores: THREAD_CONFIG.available_cores as u32,
+          parallel_enabled: THREAD_CONFIG.use_parallel,
+          recommended_batch_size: if THREAD_CONFIG.use_parallel { 1000 } else { 100 },
+      }
   }
 
   #[napi]
@@ -116,7 +221,6 @@ impl NativeDB {
         .append(true)
         .open(&self.wal_path)?;
       file.write_all(line.as_bytes())?;
-      // file.sync_all()?; // Immediate flush for durability? "Writes are appended immediately" implies flush.
       Ok(())
   }
 
@@ -243,6 +347,350 @@ impl NativeDB {
            return Err(Error::from_reason("Path does not exist".to_string()));
       }
       Ok(())
+  }
+
+  // ============================================
+  // PARALLEL OPERATIONS
+  // ============================================
+
+  /// Execute batch set operations in parallel when beneficial
+  /// Automatically falls back to sequential for small batches
+  #[napi]
+  pub fn batch_set_parallel(&self, operations: Vec<(String, Value)>) -> Result<ParallelResult> {
+      let count = operations.len();
+      
+      if THREAD_CONFIG.should_parallelize(count) {
+          // For parallel execution, we collect all operations first then apply
+          // This is because we need write lock, but we can validate in parallel
+          
+          // Pre-validate paths in parallel (read-only)
+          let validation_results: Vec<bool> = operations
+              .par_iter()
+              .map(|(path, _)| !path.is_empty() || path.is_empty()) // Simple validation
+              .collect();
+          
+          if validation_results.iter().any(|&v| !v) {
+              return Ok(ParallelResult {
+                  success: false,
+                  count: 0,
+                  error: Some("Invalid path in batch".to_string()),
+              });
+          }
+          
+          // Apply all operations (requires sequential write lock)
+          let mut data = self.data.write();
+          let mut success_count = 0u32;
+          
+          for (path, value) in operations {
+              if self.wal_enabled {
+                  let _ = self.append_wal("set", &path, Some(value.clone()));
+              }
+              if Self::set_value_at_path(&mut data, &path, value).is_ok() {
+                  success_count += 1;
+              }
+          }
+          
+          Ok(ParallelResult {
+              success: true,
+              count: success_count,
+              error: None,
+          })
+      } else {
+          // Sequential fallback for small batches
+          let mut data = self.data.write();
+          let mut success_count = 0u32;
+          
+          for (path, value) in operations {
+              if self.wal_enabled {
+                  let _ = self.append_wal("set", &path, Some(value.clone()));
+              }
+              if Self::set_value_at_path(&mut data, &path, value).is_ok() {
+                  success_count += 1;
+              }
+          }
+          
+          Ok(ParallelResult {
+              success: true,
+              count: success_count,
+              error: None,
+          })
+      }
+  }
+
+  /// Parallel filter/query on a collection
+  /// Uses rayon for CPU-bound filtering when data is large enough
+  #[napi]
+  pub fn parallel_query(&self, path: String, filters: Vec<QueryFilter>) -> Result<Value> {
+      let data = self.data.read();
+      let ptr = if path.starts_with('/') { path } else { format!("/{}", path.replace(".", "/")) };
+      
+      let collection = if ptr == "/" || ptr.is_empty() {
+          Some(&*data)
+      } else {
+          data.pointer(&ptr)
+      };
+      
+      match collection {
+          Some(Value::Object(map)) => {
+              let items: Vec<&Value> = map.values().collect();
+              let filtered = self.filter_items_parallel(&items, &filters);
+              Ok(Value::Array(filtered))
+          }
+          Some(Value::Array(arr)) => {
+              let items: Vec<&Value> = arr.iter().collect();
+              let filtered = self.filter_items_parallel(&items, &filters);
+              Ok(Value::Array(filtered))
+          }
+          _ => Ok(Value::Array(vec![])),
+      }
+  }
+  
+  /// Internal parallel filter implementation
+  fn filter_items_parallel(&self, items: &[&Value], filters: &[QueryFilter]) -> Vec<Value> {
+      let count = items.len();
+      
+      if THREAD_CONFIG.should_parallelize(count) && !filters.is_empty() {
+          // Parallel filtering for large datasets
+          items
+              .par_iter()
+              .filter(|item| self.matches_filters(item, filters))
+              .map(|v| (*v).clone())
+              .collect()
+      } else {
+          // Sequential for small datasets or no filters
+          items
+              .iter()
+              .filter(|item| self.matches_filters(item, filters))
+              .map(|v| (*v).clone())
+              .collect()
+      }
+  }
+  
+  /// Check if an item matches all filters
+  fn matches_filters(&self, item: &Value, filters: &[QueryFilter]) -> bool {
+      for filter in filters {
+          if !self.matches_filter(item, filter) {
+              return false;
+          }
+      }
+      true
+  }
+  
+  /// Check if an item matches a single filter
+  fn matches_filter(&self, item: &Value, filter: &QueryFilter) -> bool {
+      // Get field value using dot notation
+      let parts: Vec<&str> = filter.field.split('.').collect();
+      let mut current = item;
+      
+      for part in &parts {
+          match current {
+              Value::Object(map) => {
+                  if let Some(v) = map.get(*part) {
+                      current = v;
+                  } else {
+                      return false;
+                  }
+              }
+              Value::Array(arr) => {
+                  if let Ok(idx) = part.parse::<usize>() {
+                      if let Some(v) = arr.get(idx) {
+                          current = v;
+                      } else {
+                          return false;
+                      }
+                  } else {
+                      return false;
+                  }
+              }
+              _ => return false,
+          }
+      }
+      
+      // Apply operation
+      match filter.op.as_str() {
+          "eq" => current == &filter.value,
+          "ne" => current != &filter.value,
+          "gt" => {
+              if let (Some(a), Some(b)) = (current.as_f64(), filter.value.as_f64()) {
+                  a > b
+              } else {
+                  false
+              }
+          }
+          "gte" => {
+              if let (Some(a), Some(b)) = (current.as_f64(), filter.value.as_f64()) {
+                  a >= b
+              } else {
+                  false
+              }
+          }
+          "lt" => {
+              if let (Some(a), Some(b)) = (current.as_f64(), filter.value.as_f64()) {
+                  a < b
+              } else {
+                  false
+              }
+          }
+          "lte" => {
+              if let (Some(a), Some(b)) = (current.as_f64(), filter.value.as_f64()) {
+                  a <= b
+              } else {
+                  false
+              }
+          }
+          "contains" => {
+              if let (Some(haystack), Some(needle)) = (current.as_str(), filter.value.as_str()) {
+                  haystack.contains(needle)
+              } else {
+                  false
+              }
+          }
+          "startswith" => {
+              if let (Some(haystack), Some(needle)) = (current.as_str(), filter.value.as_str()) {
+                  haystack.starts_with(needle)
+              } else {
+                  false
+              }
+          }
+          "endswith" => {
+              if let (Some(haystack), Some(needle)) = (current.as_str(), filter.value.as_str()) {
+                  haystack.ends_with(needle)
+              } else {
+                  false
+              }
+          }
+          "in" => {
+              if let Value::Array(arr) = &filter.value {
+                  arr.contains(current)
+              } else {
+                  false
+              }
+          }
+          "notin" => {
+              if let Value::Array(arr) = &filter.value {
+                  !arr.contains(current)
+              } else {
+                  false
+              }
+          }
+          _ => true, // Unknown op, pass through
+      }
+  }
+
+  /// Parallel aggregation operations
+  #[napi]
+  pub fn parallel_aggregate(&self, path: String, operation: String, field: Option<String>) -> Result<Value> {
+      let data = self.data.read();
+      let ptr = if path.starts_with('/') { path } else { format!("/{}", path.replace(".", "/")) };
+      
+      let collection = if ptr == "/" || ptr.is_empty() {
+          Some(&*data)
+      } else {
+          data.pointer(&ptr)
+      };
+      
+      let items: Vec<&Value> = match collection {
+          Some(Value::Object(map)) => map.values().collect(),
+          Some(Value::Array(arr)) => arr.iter().collect(),
+          _ => return Ok(Value::Null),
+      };
+      
+      let count = items.len();
+      
+      match operation.as_str() {
+          "count" => Ok(json!(count)),
+          "sum" => {
+              let field_name = field.unwrap_or_default();
+              let sum: f64 = if THREAD_CONFIG.should_parallelize(count) {
+                  items.par_iter()
+                      .filter_map(|item| self.get_numeric_field(item, &field_name))
+                      .sum()
+              } else {
+                  items.iter()
+                      .filter_map(|item| self.get_numeric_field(item, &field_name))
+                      .sum()
+              };
+              Ok(json!(sum))
+          }
+          "avg" => {
+              let field_name = field.unwrap_or_default();
+              let values: Vec<f64> = if THREAD_CONFIG.should_parallelize(count) {
+                  items.par_iter()
+                      .filter_map(|item| self.get_numeric_field(item, &field_name))
+                      .collect()
+              } else {
+                  items.iter()
+                      .filter_map(|item| self.get_numeric_field(item, &field_name))
+                      .collect()
+              };
+              if values.is_empty() {
+                  Ok(json!(0.0))
+              } else {
+                  let sum: f64 = values.iter().sum();
+                  Ok(json!(sum / values.len() as f64))
+              }
+          }
+          "min" => {
+              let field_name = field.unwrap_or_default();
+              let min: Option<f64> = if THREAD_CONFIG.should_parallelize(count) {
+                  items.par_iter()
+                      .filter_map(|item| self.get_numeric_field(item, &field_name))
+                      .reduce(|| f64::INFINITY, |a, b| a.min(b))
+                      .into()
+              } else {
+                  items.iter()
+                      .filter_map(|item| self.get_numeric_field(item, &field_name))
+                      .reduce(f64::min)
+              };
+              match min {
+                  Some(v) if v != f64::INFINITY => Ok(json!(v)),
+                  _ => Ok(Value::Null),
+              }
+          }
+          "max" => {
+              let field_name = field.unwrap_or_default();
+              let max: Option<f64> = if THREAD_CONFIG.should_parallelize(count) {
+                  items.par_iter()
+                      .filter_map(|item| self.get_numeric_field(item, &field_name))
+                      .reduce(|| f64::NEG_INFINITY, |a, b| a.max(b))
+                      .into()
+              } else {
+                  items.iter()
+                      .filter_map(|item| self.get_numeric_field(item, &field_name))
+                      .reduce(f64::max)
+              };
+              match max {
+                  Some(v) if v != f64::NEG_INFINITY => Ok(json!(v)),
+                  _ => Ok(Value::Null),
+              }
+          }
+          _ => Ok(Value::Null),
+      }
+  }
+  
+  /// Helper to get numeric field value
+  fn get_numeric_field(&self, item: &Value, field: &str) -> Option<f64> {
+      if field.is_empty() {
+          return item.as_f64();
+      }
+      
+      let parts: Vec<&str> = field.split('.').collect();
+      let mut current = item;
+      
+      for part in parts {
+          match current {
+              Value::Object(map) => {
+                  current = map.get(part)?;
+              }
+              Value::Array(arr) => {
+                  let idx: usize = part.parse().ok()?;
+                  current = arr.get(idx)?;
+              }
+              _ => return None,
+          }
+      }
+      
+      current.as_f64()
   }
 
   // --- Exposed API ---

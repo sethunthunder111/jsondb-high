@@ -336,6 +336,94 @@ async function runTests() {
     if (electronics.length !== 3) throw new Error('FindAll failed');
     console.log('   ✅ Passed\n');
 
+    // ============================================
+    // TEST 20: System Info (Multi-Core Detection)
+    // ============================================
+    console.log('🖥️  [Test 20] System Info (Multi-Core Detection)');
+    const sysInfo = dbWithIndex.getSystemInfo();
+    console.log('   Available Cores:', sysInfo.availableCores);
+    console.log('   Parallel Enabled:', sysInfo.parallelEnabled);
+    console.log('   Recommended Batch Size:', sysInfo.recommendedBatchSize);
+    if (sysInfo.availableCores < 1) throw new Error('System info failed');
+    console.log('   ✅ Passed\n');
+
+    // ============================================
+    // TEST 21: Parallel Batch Set Operations
+    // ============================================
+    console.log('⚡ [Test 21] Parallel Batch Set Operations');
+    
+    // Generate a larger dataset to test parallelism
+    const batchOps: Array<{ path: string; value: unknown }> = [];
+    for (let i = 0; i < 500; i++) {
+        batchOps.push({
+            path: `parallel_users.user_${i}`,
+            value: { id: i, name: `User ${i}`, age: 18 + (i % 60), active: i % 2 === 0 }
+        });
+    }
+    
+    const batchResult = await dbWithIndex.batchSetParallel(batchOps);
+    console.log('   Batch Result:', batchResult);
+    console.log('   Operations completed:', batchResult.count);
+    
+    if (!batchResult.success) throw new Error('Parallel batch failed: ' + batchResult.error);
+    if (batchResult.count !== 500) throw new Error('Parallel batch count mismatch');
+    
+    // Verify some data
+    const testUser = await dbWithIndex.get<{ id: number; name: string }>('parallel_users.user_42');
+    if (testUser?.name !== 'User 42') throw new Error('Parallel batch verification failed');
+    console.log('   ✅ Passed\n');
+
+    // ============================================
+    // TEST 22: Parallel Query
+    // ============================================
+    console.log('🔎 [Test 22] Parallel Query');
+    
+    interface ParallelUser { id: number; name: string; age: number; active: boolean; }
+    
+    // Query for active users over 50
+    const activeElders = await dbWithIndex.parallelQuery<ParallelUser>('parallel_users', [
+        { field: 'age', op: 'gte', value: 50 },
+        { field: 'active', op: 'eq', value: true }
+    ]);
+    
+    console.log('   Active users age >= 50:', activeElders.length);
+    
+    // Verify all results match criteria
+    for (const user of activeElders) {
+        if (user.age < 50) throw new Error('Parallel query filter failed: age');
+        if (!user.active) throw new Error('Parallel query filter failed: active');
+    }
+    console.log('   ✅ Passed\n');
+
+    // ============================================
+    // TEST 23: Parallel Aggregation
+    // ============================================
+    console.log('📊 [Test 23] Parallel Aggregation');
+    
+    const parallelCount = await dbWithIndex.parallelAggregate('parallel_users', 'count');
+    console.log('   Parallel Count:', parallelCount);
+    if (parallelCount !== 500) throw new Error('Parallel count failed');
+    
+    const parallelSum = await dbWithIndex.parallelAggregate('parallel_users', 'sum', 'age');
+    console.log('   Parallel Sum of ages:', parallelSum);
+    if (parallelSum === null || parallelSum <= 0) throw new Error('Parallel sum failed');
+    
+    const parallelAvg = await dbWithIndex.parallelAggregate('parallel_users', 'avg', 'age');
+    console.log('   Parallel Avg age:', parallelAvg);
+    if (parallelAvg === null || parallelAvg <= 0) throw new Error('Parallel avg failed');
+    
+    const parallelMin = await dbWithIndex.parallelAggregate('parallel_users', 'min', 'age');
+    console.log('   Parallel Min age:', parallelMin);
+    if (parallelMin !== 18) throw new Error('Parallel min failed');
+    
+    const parallelMax = await dbWithIndex.parallelAggregate('parallel_users', 'max', 'age');
+    console.log('   Parallel Max age:', parallelMax);
+    if (parallelMax !== 77) throw new Error('Parallel max failed');
+    console.log('   ✅ Passed\n');
+
+    // Cleanup parallel test data
+    await dbWithIndex.delete('parallel_users');
+
     // Cleanup
     await dbWithIndex.close();
     cleanup();
