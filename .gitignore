@@ -57,7 +57,8 @@ bench_db.json.wal
 
 # NAPI-RS Artifacts
 artifacts/
-npm/
+
 *.tgz
 
 .agent
+npm/

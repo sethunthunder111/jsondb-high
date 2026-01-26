@@ -44,9 +44,6 @@ jobs:
             target: x86_64-pc-windows-msvc
             build: bun run build -- --target x86_64-pc-windows-msvc
           - host: windows-latest
-            target: i686-pc-windows-msvc
-            build: bun run build -- --target i686-pc-windows-msvc
-          - host: windows-latest
             target: aarch64-pc-windows-msvc
             build: bun run build -- --target aarch64-pc-windows-msvc
 
@@ -130,6 +127,9 @@ jobs:
 
       - name: Install dependencies
         run: bun install
+
+      - name: Setup NPM packages
+        run: bun x napi prepublish -t npm --skip-gh-release
 
       - name: Move artifacts
         run: bun run artifacts

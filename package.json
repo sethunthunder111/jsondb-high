@@ -6,15 +6,15 @@
   "types": "index.d.ts",
   "napi": {
     "name": "jsondb-high",
-    "triples": {
-      "defaults": true,
-      "additional": [
-        "aarch64-unknown-linux-gnu",
-        "i686-pc-windows-msvc",
-        "aarch64-apple-darwin",
-        "aarch64-pc-windows-msvc"
-      ]
-    }
+    "targets": [
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl"
+    ]
   },
   "scripts": {
     "build": "napi build --platform --release",
@@ -22,6 +22,7 @@
     "artifacts": "napi artifacts",
     "test": "bun tests/database.test.ts",
     "bench": "bun benchmarks/run.ts",
+    "clean": "bun scripts/clean.ts",
     "version": "napi version"
   },
   "keywords": [
@@ -57,5 +58,10 @@
   },
   "engines": {
     "node": ">= 16.0.0"
+  },
+  "optionalDependencies": {
+    "jsondb-high-win32-x64-msvc": "4.0.1",
+    "jsondb-high-darwin-x64": "4.0.1",
+    "jsondb-high-linux-x64-gnu": "4.0.1"
   }
 }
