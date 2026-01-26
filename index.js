@@ -304,6 +304,18 @@ switch (platform) {
 }
 
 if (!nativeBinding) {
+  try {
+    const { buildOnDemand } = require('./scripts/build-on-demand.js')
+    const binaryPath = buildOnDemand()
+    if (binaryPath) {
+      nativeBinding = require(binaryPath)
+    }
+  } catch (e) {
+    loadError = e
+  }
+}
+
+if (!nativeBinding) {
   if (loadError) {
     throw loadError
   }

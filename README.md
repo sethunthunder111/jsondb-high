@@ -24,6 +24,14 @@ bun add jsondb-high
 npm install jsondb-high
 ```
 
+> **Note**: This package builds its native core from source during installation. You must have [Rust and Cargo](https://rustup.rs/) installed on your system.
+
+## 🛠️ Requirements
+
+- **Node.js**: >= 16.0.0
+- **Rust Toolchain**: [Installed and in PATH](https://rustup.rs/) (Required for initial build)
+- **C++ Build Tools**: Required by Cargo on some platforms (e.g., Visual Studio Build Tools on Windows)
+
 ## 🚀 Quick Start
 
 ```typescript

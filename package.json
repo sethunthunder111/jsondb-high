@@ -1,29 +1,15 @@
 {
   "name": "jsondb-high",
-  "version": "4.0.11",
+  "version": "4.0.12",
   "description": "A blazing fast, Rust-powered in-memory JSON database for Node.js with WAL, Encryption, and Advanced Query support.",
   "main": "index.js",
   "types": "index.d.ts",
-  "napi": {
-    "name": "jsondb-high",
-    "targets": [
-      "x86_64-apple-darwin",
-      "aarch64-apple-darwin",
-      "x86_64-pc-windows-msvc",
-      "aarch64-pc-windows-msvc",
-      "x86_64-unknown-linux-gnu",
-      "aarch64-unknown-linux-gnu",
-      "x86_64-unknown-linux-musl"
-    ]
-  },
   "scripts": {
-    "build": "napi build --platform --release",
-    "build:debug": "napi build --platform",
-    "artifacts": "bun scripts/move-artifacts.ts",
+    "build": "node scripts/build-on-demand.js",
     "test": "bun tests/database.test.ts",
     "bench": "bun benchmarks/run.ts",
     "clean": "bun scripts/clean.ts",
-    "version": "napi version"
+    "postinstall": "node scripts/build-on-demand.js"
   },
   "keywords": [
     "json",
@@ -58,14 +44,5 @@
   },
   "engines": {
     "node": ">= 16.0.0"
-  },
-  "optionalDependencies": {
-    "jsondb-high-win32-x64-msvc": "4.0.11",
-    "jsondb-high-win32-arm64-msvc": "4.0.11",
-    "jsondb-high-darwin-x64": "4.0.11",
-    "jsondb-high-darwin-arm64": "4.0.11",
-    "jsondb-high-linux-x64-gnu": "4.0.11",
-    "jsondb-high-linux-arm64-gnu": "4.0.11",
-    "jsondb-high-linux-x64-musl": "4.0.11"
   }
 }
