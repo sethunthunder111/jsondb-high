@@ -1,7 +1,7 @@
 {
   "name": "jsondb-high",
   "version": "4.5.0",
-  "description": "A blazing fast, Rust-powered in-memory JSON database for Node.js with WAL, Encryption, and Advanced Query support.",
+  "description": "Blazing fast, Rust-powered in-memory JSON database for Node.js. Features Group Commit WAL, Multi-Process safety, and O(1) indexing. ~2M/s reads, ~260k/s writes.",
   "main": "index.ts",
   "types": "index.d.ts",
   "scripts": {
@@ -25,7 +25,10 @@
     "encryption",
     "acid",
     "durable",
-    "multi-process"
+    "multi-process",
+    "safety",
+    "group-commit",
+    "performance"
   ],
   "author": "sethunthunder111",
   "license": "MIT",

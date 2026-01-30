@@ -453,8 +453,15 @@ await db.clear();
 const stats = await db.stats();
 // { size: 1234, keys: 10, indices: 2, ttlKeys: 5, subscriptions: 3 }
 
-// Force save to disk
+// Force save to disk (Durable write)
 await db.save();
+
+// Explicit durability sync (v4.5+)
+await db.sync();
+
+// Check WAL status (v4.5+)
+const wal = db.walStatus();
+// { enabled: true, committedLsn: 12345 }
 
 // Clean shutdown
 await db.close();
