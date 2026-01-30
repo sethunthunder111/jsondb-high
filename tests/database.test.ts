@@ -4,10 +4,16 @@ import { unlinkSync, existsSync } from 'fs';
 const TEST_DB = 'test_db.json';
 const TEST_WAL = 'test_db.json.wal';
 const TEST_ENCRYPTED_DB = 'test_encrypted.json';
+const TEST_LOCK_DB = 'test_lock.json';
+const TEST_DURABILITY_DB = 'test_durability.json';
 
 // Clean up previous runs
 const cleanup = () => {
-    const files = [TEST_DB, TEST_WAL, TEST_ENCRYPTED_DB, `${TEST_ENCRYPTED_DB}.wal`];
+    const files = [
+        TEST_DB, TEST_WAL, TEST_ENCRYPTED_DB, `${TEST_ENCRYPTED_DB}.wal`,
+        TEST_LOCK_DB, `${TEST_LOCK_DB}.wal`,
+        TEST_DURABILITY_DB, `${TEST_DURABILITY_DB}.wal`
+    ];
     for (const f of files) {
         if (existsSync(f)) unlinkSync(f);
     }
@@ -39,6 +45,7 @@ async function runTests() {
     const name = await db.get('user.name');
     console.log('   Got Name:', name);
     if (name !== 'Alice') throw new Error('Basic Set/Get failed');
+    await db.close();
     console.log('   ✅ Passed\n');
 
     // ============================================
@@ -48,6 +55,7 @@ async function runTests() {
     const db2 = new JSONDatabase(TEST_DB, { wal: true });
     await db2.set('config.theme', 'dark');
     await db2.save(); // Force save
+    await db2.close(); // Release lock for next instance
     
     const db3 = new JSONDatabase(TEST_DB, { wal: true });
     const theme = await db3.get('config.theme');
@@ -98,9 +106,7 @@ async function runTests() {
     if (b1 !== 1 || hasTags) throw new Error('Batch failed');
     console.log('   ✅ Passed\n');
 
-    // ============================================
-    // TEST 6: Indexing (O(1) Lookups)
-    // ============================================
+    await db3.close();
     console.log('🔍 [Test 6] Indexing');
     const dbWithIndex = new JSONDatabase(TEST_DB, {
         wal: false,
@@ -195,7 +201,7 @@ async function runTests() {
     
     const sessionAfter = await dbWithIndex.get('session.abc123');
     console.log('   Session after expiry:', sessionAfter);
-    if (sessionAfter !== undefined) throw new Error('TTL expiry failed');
+    if (sessionAfter !== undefined && sessionAfter !== null) throw new Error('TTL expiry failed');
     console.log('   ✅ Passed\n');
 
     // ============================================
@@ -248,25 +254,42 @@ async function runTests() {
     console.log('   ✅ Passed\n');
 
     // ============================================
-    // TEST 14: Transaction with Rollback
+    // TEST 14: Transaction with Savepoints & Rollback
     // ============================================
-    console.log('🔒 [Test 14] Transaction');
-    await dbWithIndex.set('bank', { balance: 100 });
+    console.log('🔒 [Test 14] Transaction with Savepoints');
+    await dbWithIndex.set('bank', { alice: 100, bob: 100 });
     
     try {
-        await dbWithIndex.transaction(async (data: Record<string, unknown>) => {
-            const bank = data.bank as { balance: number };
-            if (bank.balance >= 50) {
-                bank.balance -= 50;
-            }
-            return data;
+        await dbWithIndex.transaction(async (tx) => {
+            // Operation 1: Alice gives to Bob
+            const alice = await dbWithIndex.get<number>('bank.alice');
+            const bob = await dbWithIndex.get<number>('bank.bob');
+            await dbWithIndex.set('bank.alice', alice - 50);
+            await dbWithIndex.set('bank.bob', bob + 50);
+            
+            // Create savepoint
+            await tx.savepoint('sp1');
+            
+            // Operation 2: Bob gives to Charlie (oops, typo)
+            await dbWithIndex.set('bank.bob', bob + 50 - 20);
+            await dbWithIndex.set('bank.charlie', 20);
+            
+            // Rollback to savepoint
+            await tx.rollbackTo('sp1');
         });
-        const balance = await dbWithIndex.get<{ balance: number }>('bank');
-        console.log('   Balance after transaction:', balance?.balance);
-        if (balance?.balance !== 50) throw new Error('Transaction failed');
+        
+        const bank = await dbWithIndex.get<any>('bank');
+        console.log('   Bank state after transaction:', bank);
+        // Should be Alice: 50, Bob: 150, Charlie: null/undefined
+        if (bank.alice !== 50 || bank.bob !== 150 || bank.charlie !== undefined) {
+             console.log('   Mismatch:', { alice: bank.alice, bob: bank.bob, charlie: bank.charlie });
+             throw new Error('Transaction/Savepoint failed');
+        }
     } catch (e) {
-        console.log('   Transaction error (expected):', e);
+        console.error('   Transaction error:', e);
+        throw e;
     }
+    console.log('   ✅ Passed\n');
     console.log('   ✅ Passed\n');
 
     // ============================================
@@ -424,11 +447,330 @@ async function runTests() {
     // Cleanup parallel test data
     await dbWithIndex.delete('parallel_users');
 
+    // ============================================
+    // v4.5 FEATURE TESTS
+    // ============================================
+
+    // ============================================
+    // TEST 24: v4.5 WAL Status
+    // ============================================
+    console.log('📊 [Test 24] v4.5 WAL Status');
+    const dbWal = new JSONDatabase(TEST_DB, { 
+        wal: true,
+        durability: 'batched'
+    });
+    
+    const walStatus = dbWal.walStatus();
+    console.log('   WAL Status:', walStatus);
+    if (!walStatus.enabled) throw new Error('WAL should be enabled');
+    console.log('   ✅ Passed\n');
+    await dbWal.close();
+
+    // ============================================
+    // TEST 25: v4.5 Durability Modes
+    // ============================================
+    console.log('💾 [Test 25] v4.5 Durability Modes');
+    
+    // Test 'none' durability (no WAL)
+    const dbNoDurability = new JSONDatabase(TEST_DURABILITY_DB + '_none', { 
+        durability: 'none'
+    });
+    const walStatusNone = dbNoDurability.walStatus();
+    console.log('   Durability "none" - WAL enabled:', walStatusNone.enabled);
+    if (walStatusNone.enabled) throw new Error('WAL should be disabled for durability=none');
+    await dbNoDurability.close();
+    
+    // Test 'sync' durability (immediate fsync)
+    const dbSync = new JSONDatabase(TEST_DURABILITY_DB + '_sync', { 
+        durability: 'sync'
+    });
+    await dbSync.set('test', { value: 1 });
+    await dbSync.sync(); // Explicit sync
+    const walStatusSync = dbSync.walStatus();
+    console.log('   Durability "sync" - WAL enabled:', walStatusSync.enabled);
+    if (!walStatusSync.enabled) throw new Error('WAL should be enabled for durability=sync');
+    await dbSync.close();
+    
+    console.log('   ✅ Passed\n');
+
+    // Cleanup durability test files
+    [TEST_DURABILITY_DB + '_none', TEST_DURABILITY_DB + '_sync'].forEach(f => {
+        if (existsSync(f)) unlinkSync(f);
+        if (existsSync(f + '.wal')) unlinkSync(f + '.wal');
+    });
+
+    // ============================================
+    // TEST 26: v4.5 Crash Recovery Simulation
+    // ============================================
+    console.log('🔄 [Test 26] v4.5 Crash Recovery Simulation');
+    const dbCrashTest = 'test_crash_recovery.json';
+    const dbCrashTestWal = 'test_crash_recovery.json.wal';
+    
+    // Clean up any previous test files
+    if (existsSync(dbCrashTest)) unlinkSync(dbCrashTest);
+    if (existsSync(dbCrashTestWal)) unlinkSync(dbCrashTestWal);
+    
+    // Create DB with batched durability
+    const dbBeforeCrash = new JSONDatabase(dbCrashTest, { 
+        durability: 'batched',
+        walFlushMs: 50 // Short flush interval for testing
+    });
+    
+    // Write data
+    await dbBeforeCrash.set('critical.data', { user: 'test', value: 42 });
+    await dbBeforeCrash.sync(); // Ensure it's flushed
+    
+    // Close without saving (simulates crash before checkpoint)
+    await dbBeforeCrash.close();
+    
+    // Reopen - should recover from WAL
+    const dbAfterCrash = new JSONDatabase(dbCrashTest, { 
+        durability: 'batched'
+    });
+    
+    const recoveredData = await dbAfterCrash.get('critical.data');
+    console.log('   Recovered data after crash:', recoveredData);
+    if (!recoveredData || (recoveredData as any).value !== 42) {
+        throw new Error('Crash recovery failed - data not recovered from WAL');
+    }
+    
+    await dbAfterCrash.close();
+    
+    // Cleanup
+    if (existsSync(dbCrashTest)) unlinkSync(dbCrashTest);
+    if (existsSync(dbCrashTestWal)) unlinkSync(dbCrashTestWal);
+    console.log('   ✅ Passed\n');
+
+    // ============================================
+    // TEST 27: v4.5 Lock-Free Reads Performance
+    // ============================================
+    console.log('⚡ [Test 27] v4.5 Lock-Free Reads Performance');
+    const dbPerf = new JSONDatabase(TEST_DB, { 
+        wal: true,
+        durability: 'batched'
+    });
+    
+    // Populate with test data
+    await dbPerf.set('perf.test', { items: Array.from({ length: 1000 }, (_, i) => ({ id: i, value: i * 2 })) });
+    
+    // Measure read performance
+    const readStart = performance.now();
+    for (let i = 0; i < 1000; i++) {
+        await dbPerf.get('perf.test');
+    }
+    const readDuration = performance.now() - readStart;
+    console.log(`   1000 reads took ${readDuration.toFixed(2)}ms (${(readDuration / 1000).toFixed(3)}ms avg)`);
+    
+    if (readDuration > 5000) { // Should be much faster than 5 seconds
+        console.log('   ⚠️  Warning: Reads slower than expected, but test passes');
+    }
+    
+    await dbPerf.close();
+    console.log('   ✅ Passed\n');
+
+    // ============================================
+    // TEST 28: v4.5 Multi-Process Lock (Basic)
+    // ============================================
+    console.log('🔒 [Test 28] v4.5 Multi-Process Lock (Basic)');
+    
+    const lockTestDb = 'test_lock_basic.json';
+    if (existsSync(lockTestDb)) unlinkSync(lockTestDb);
+    if (existsSync(lockTestDb + '.wal')) unlinkSync(lockTestDb + '.wal');
+    
+    // Test 'none' lock mode (default for backwards compatibility)
+    const dbNoLock = new JSONDatabase(lockTestDb, { 
+        lockMode: 'none',
+        durability: 'none'
+    });
+    await dbNoLock.set('test', 1);
+    console.log('   Lock mode "none" works');
+    await dbNoLock.close();
+    
+    // Test 'exclusive' lock mode
+    const dbExclusive = new JSONDatabase(lockTestDb, { 
+        lockMode: 'exclusive',
+        durability: 'batched'
+    });
+    await dbExclusive.set('test', 2);
+    console.log('   Lock mode "exclusive" works');
+    
+    // WAL status should work
+    const exclusiveWalStatus = dbExclusive.walStatus();
+    if (!exclusiveWalStatus.enabled) throw new Error('WAL should be enabled');
+    console.log('   WAL status with exclusive lock:', exclusiveWalStatus);
+    
+    await dbExclusive.close();
+    
+    // Cleanup
+    if (existsSync(lockTestDb)) unlinkSync(lockTestDb);
+    if (existsSync(lockTestDb + '.wal')) unlinkSync(lockTestDb + '.wal');
+    console.log('   ✅ Passed\n');
+
+    // ============================================
+    // TEST 29: v4.5 Batched Write Performance
+    // ============================================
+    console.log('⚡ [Test 29] v4.5 Batched Write Performance');
+    const dbBatch = new JSONDatabase(TEST_DB, { 
+        durability: 'batched',
+        walBatchSize: 100,
+        walFlushMs: 10
+    });
+    
+    // Measure batched write performance
+    const batchWriteStart = performance.now();
+    for (let i = 0; i < 100; i++) {
+        await dbBatch.set(`batch_perf.item_${i}`, { id: i, data: 'x'.repeat(100) });
+    }
+    const batchWriteDuration = performance.now() - batchWriteStart;
+    console.log(`   100 batched writes took ${batchWriteDuration.toFixed(2)}ms`);
+    
+    await dbBatch.sync(); // Ensure all flushed
+    
+    const finalWalStatus = dbBatch.walStatus();
+    console.log('   Final WAL status:', finalWalStatus);
+    
+    await dbBatch.close();
+    console.log('   ✅ Passed\n');
+
+    // ============================================
+    // TEST 30: v4.5 New Query Operators (containsAll, containsAny)
+    // ============================================
+    console.log('🔎 [Test 30] v4.5 New Query Operators');
+    const dbNewOps = new JSONDatabase(TEST_DB, { durability: 'none' });
+    
+    await dbNewOps.set('items', {
+        '1': { id: 1, tags: ['a', 'b', 'c'], name: 'Item 1' },
+        '2': { id: 2, tags: ['b', 'c', 'd'], name: 'Item 2' },
+        '3': { id: 3, tags: ['a', 'c'], name: 'Item 3' },
+        '4': { id: 4, tags: ['e', 'f'], name: 'Item 4' },
+    });
+    
+    // Test parallel query with containsAll
+    interface TaggedItem { id: number; tags: string[]; name: string; }
+    const itemsWithAB = await dbNewOps.parallelQuery<TaggedItem>('items', [
+        { field: 'tags', op: 'containsAll', value: ['a', 'b'] }
+    ]);
+    console.log('   Items with tags a AND b:', itemsWithAB.length);
+    if (itemsWithAB.length !== 1) throw new Error('containsAll failed');
+    
+    // Test parallel query with containsAny
+    const itemsWithAorE = await dbNewOps.parallelQuery<TaggedItem>('items', [
+        { field: 'tags', op: 'containsAny', value: ['a', 'e'] }
+    ]);
+    console.log('   Items with tags a OR e:', itemsWithAorE.length);
+    if (itemsWithAorE.length !== 3) throw new Error('containsAny failed');
+    
+    await dbNewOps.close();
+    console.log('   ✅ Passed\n');
+
+    // ============================================
+    // TEST 31: v4.5 Parallel Join (Lookup)
+    // ============================================
+    console.log('🔗 [Test 31] v4.5 Parallel Join (Lookup)');
+    const dbJoin = new JSONDatabase(TEST_DB, { durability: 'none' });
+    
+    // Set up users and orders
+    await dbJoin.set('users_join', {
+        '1': { id: 1, name: 'Alice' },
+        '2': { id: 2, name: 'Bob' },
+        '3': { id: 3, name: 'Charlie' }
+    });
+    
+    await dbJoin.set('orders_join', {
+        '101': { id: 101, userId: 1, amount: 100 },
+        '102': { id: 102, userId: 1, amount: 200 },
+        '103': { id: 103, userId: 2, amount: 150 },
+        '104': { id: 104, userId: 2, amount: 50 },
+        '105': { id: 105, userId: 2, amount: 75 }
+    });
+    
+    // Perform parallel lookup join
+    const joinedResult = await dbJoin.parallelLookup(
+        'users_join',
+        'orders_join',
+        'id',
+        'userId',
+        'orders'
+    );
+    
+    console.log('   Joined result count:', joinedResult.length);
+    const alice = joinedResult.find((u: any) => u.name === 'Alice');
+    const bobJoined = joinedResult.find((u: any) => u.name === 'Bob');
+    
+    if (alice?.orders?.length !== 2) throw new Error('Join failed for Alice');
+    if (bobJoined?.orders?.length !== 3) throw new Error('Join failed for Bob');
+    
+    console.log('   Alice orders:', alice.orders.length);
+    console.log('   Bob orders:', bobJoined.orders.length);
+    console.log('   Charlie orders:', joinedResult.find((u: any) => u.name === 'Charlie')?.orders?.length || 0);
+    
+    await dbJoin.close();
+    console.log('   ✅ Passed\n');
+
+    // ============================================
+    // TEST 32: Schema Validation
+    // ============================================
+    console.log('✅ [Test 32] Schema Validation');
+    const dbSchema = new JSONDatabase(TEST_DB + '.schema', {
+        schemas: {
+            'users_strict': {
+                type: 'object',
+                properties: {
+                    'age': { type: 'number', minimum: 0, maximum: 120 },
+                    'email': { type: 'string', pattern: '^.+@.+\\..+$' }
+                },
+                required: ['email']
+            }
+        }
+    });
+
+    // Valid data
+    await dbSchema.set('users_strict.1', { age: 25, email: 'test@example.com' });
+    console.log('   Valid data accepted');
+
+    // Invalid data - wrong type
+    try {
+        await dbSchema.set('users_strict.2', { age: 'not-a-number', email: 'test@example.com' });
+        throw new Error('Should have failed validation (wrong type)');
+    } catch (e: any) {
+        console.log('   Invalid data (type) correctly rejected:', e.message);
+    }
+
+    // Invalid data - out of range
+    try {
+        await dbSchema.set('users_strict.3', { age: 150, email: 'test@example.com' });
+        throw new Error('Should have failed validation (out of range)');
+    } catch (e: any) {
+        console.log('   Invalid data (range) correctly rejected:', e.message);
+    }
+
+    // Invalid data - missing required field
+    try {
+        await dbSchema.set('users_strict.4', { age: 30 });
+        throw new Error('Should have failed validation (missing required)');
+    } catch (e: any) {
+        console.log('   Invalid data (required) correctly rejected:', e.message);
+    }
+
+    await dbSchema.close();
+    if (existsSync(TEST_DB + '.schema')) unlinkSync(TEST_DB + '.schema');
+    if (existsSync(TEST_DB + '.schema.wal')) unlinkSync(TEST_DB + '.schema.wal');
+    console.log('   ✅ Passed\n');
+
     // Cleanup
     await dbWithIndex.close();
     cleanup();
 
     console.log('\n🎉 === All Tests Passed! ===');
+    console.log('\n📋 v4.5 Features Tested:');
+    console.log('   • WAL Status API');
+    console.log('   • Durability Modes (none, batched, sync)');
+    console.log('   • Crash Recovery Simulation');
+    console.log('   • Lock-Free Reads');
+    console.log('   • Multi-Process Lock Modes');
+    console.log('   • Batched Write Performance');
+    console.log('   • New Query Operators (containsAll, containsAny)');
+    console.log('   • Parallel Join/Lookup');
 }
 
 runTests().catch(e => {

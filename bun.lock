@@ -9,15 +9,6 @@
         "@types/bun": "latest",
         "@types/node": "^20.0.0",
       },
-      "optionalDependencies": {
-        "jsondb-high-darwin-arm64": "4.0.13",
-        "jsondb-high-darwin-x64": "4.0.13",
-        "jsondb-high-linux-arm64-gnu": "4.0.13",
-        "jsondb-high-linux-x64-gnu": "4.0.13",
-        "jsondb-high-linux-x64-musl": "4.0.13",
-        "jsondb-high-win32-arm64-msvc": "4.0.13",
-        "jsondb-high-win32-x64-msvc": "4.0.13",
-      },
       "peerDependencies": {
         "typescript": "^5",
       },

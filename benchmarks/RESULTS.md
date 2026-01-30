@@ -1,77 +1,12 @@
-# 📊 jsondb-high (v4.0.0) Benchmark Results
+# 📊 jsondb-high Benchmark Results
 
-> Generated: 2026-01-25T14:41:23.576Z  
+> Generated: 2026-01-30T22:26:29.714Z  
 > Iterations per test: 10,000  
 > Warmup iterations: 1,000
 
----
-
-## ⚔️ The Evolution: v2 → v3 → jsondb-high (v4)
-
-This section highlights the massive performance leap from the legacy `json-database-st` (v2/v3) to the current `jsondb-high` architecture.
-
-### 🏆 Milestone Comparison
-
-| Generation | Project | Engine | Key Feature | Performance Class |
-| :--- | :--- | :--- | :--- | :--- |
-| **Legacy** | `json-database-st` v2.x | Pure JavaScript | Incremental I/O | Standard (O(N) writes) |
-| **Intermediate** | `json-database-st` v3.x | Rust Core | Write-Ahead Log | High (O(1) writes) |
-| **High Performance** | **`jsondb-high` (v4/Current)** | **Advanced Rust** 🦀 | **Zero-Copy + SIMD** | **Elite (Highest Throughput)** |
-
----
-
-## ⚔️ Head-to-Head Performance
-
-### 1. Single Update Latency
-
-*Measured on a database with 1,000,000 records.*
-
-| Version | Engine | Latency (Lower is Better) | Improvement |
-| :--- | :--- | :--- | :--- |
-| **v2.0** | Pure JS (Rewrite) | 6,343.00 ms | 1x |
-| **v3.1** | Rust Core (WAL) | 0.005 ms | ~1,260,000x |
-| **jsondb-high** | **Adv. Rust (In-Mem)** | **0.007 ms** | **~900,000x** |
-
-> **Note:** `jsondb-high` maintains near-instantaneous writes regardless of dataset size by avoiding full-file rewrites.
-
-### 2. Write Throughput (Ops/Sec)
-
-*Scenario: Sequential ingestion of 1,000,000 records.*
-
-| Version | Mode | Ops/Sec (Higher is Better) | Safety |
-| :--- | :--- | :--- | :--- |
-| **v2.0** | Standard JS | ~12,000 | ⚠️ Unsafe (Data Loss Risk) |
-| **v3.1** | Rust WAL | ~38,514 | ✅ Durable (ACID) |
-| **jsondb-high** | **Elite In-Memory** | **~136,994** | ✅ Periodic Persist |
-
-### 3. Read Latency (Linear Scan)
-
-*Comparing search performance across different dataset sizes.*
-
-| Dataset Size | v3.x Performance | **jsondb-high (v4)** |
-| :--- | :--- | :--- |
-| 1,000 | 0.54 ms | **< 0.1 ms** |
-| 10,000 | 5.92 ms | **< 1.0 ms** |
-| 1,000,000 | 324.76 ms | **~185.00 ms** |
-
----
-
-## 🏗 Architectural Shift
-
-| Feature | Legacy (v2) | Intermediate (v3) | **jsondb-high (v4)** |
-| :--- | :--- | :--- | :--- |
-| **Core Language** | JavaScript | Rust 🦀 | **Advanced Rust 🦀** |
-| **Storage Engine** | File Rewrite | WAL (Append) | **WAL + Binary Indexing** |
-| **Serialization** | `JSON.stringify` | Zero-Copy | **SIMD-Accelerated** |
-| **Concurrency** | Single-Threaded | Async IO | **Multi-Threaded Worker Pool** |
-
----
-
-## ⚡ Current Version Detailed Results (jsondb-high)
-
 ## System Information
 
-- **Platform**: win32
+- **Platform**: linux
 - **Architecture**: x64
 - **Node Version**: v24.3.0
 
@@ -79,26 +14,26 @@ This section highlights the massive performance leap from the legacy `json-datab
 
 | Operation | In-Memory (ops/s) | WAL Mode (ops/s) | Avg Latency (ms) |
 | --------- | ----------------- | ---------------- | ---------------- |
-| set (simple) | 136,994 | 1,913 | 0.0073 |
-| set (nested) | 158,449 | 2,456 | 0.0063 |
-| get (existing) | 253,948 | 201,056 | 0.0039 |
-| get (default) | 801,700 | 389,956 | 0.0012 |
-| has (existing) | 473,353 | 249,051 | 0.0021 |
-| has (missing) | 730,311 | 332,594 | 0.0014 |
-| delete | 153,035 | 2,907 | 0.0065 |
-| add | 136,590 | 2,875 | 0.0073 |
-| subtract | 130,833 | 3,019 | 0.0076 |
-| push | 1,763 | 739 | 0.5672 |
-| pull | 1,802 | 468 | 0.5550 |
-| query.where().exec() | 475 | 381 | 2.1066 |
-| query.sort().limit() | 368 | 346 | 2.7202 |
-| query.count() | 473 | 465 | 2.1143 |
-| query.sum() | 448 | 463 | 2.2316 |
-| find (predicate) | 463 | 465 | 2.1578 |
-| find (object) | 272 | 470 | 3.6811 |
-| paginate | 385 | 461 | 2.5974 |
-| findByIndex | 193,306 | 274,882 | 0.0052 |
-| batch (10 ops) | 72,515 | 254 | 0.0138 |
+| set (simple) | 266,567 | 244,557 | 0.0038 |
+| set (nested) | 229,894 | 241,600 | 0.0043 |
+| get (existing) | 762,585 | 992,655 | 0.0013 |
+| get (default) | 1,453,881 | 2,069,142 | 0.0007 |
+| has (existing) | 1,842,944 | 1,830,801 | 0.0005 |
+| has (missing) | 1,938,518 | 1,729,562 | 0.0005 |
+| delete | 331,851 | 321,576 | 0.0030 |
+| add | 333,251 | 334,420 | 0.0030 |
+| subtract | 334,696 | 340,233 | 0.0030 |
+| push | 3,436 | 3,227 | 0.2911 |
+| pull | 2,127 | 2,162 | 0.4700 |
+| query.where().exec() | 1,104 | 1,061 | 0.9054 |
+| query.sort().limit() | 755 | 737 | 1.3244 |
+| query.count() | 1,168 | 1,150 | 0.8563 |
+| query.sum() | 1,146 | 1,118 | 0.8728 |
+| find (predicate) | 1,169 | 1,119 | 0.8555 |
+| find (object) | 1,179 | 1,142 | 0.8481 |
+| paginate | 1,158 | 1,145 | 0.8638 |
+| findByIndex | 511,932 | 451,284 | 0.0020 |
+| batch (10 ops) | 187,280 | 151,731 | 0.0053 |
 
 ## Detailed Results
 
@@ -108,26 +43,26 @@ In-memory mode prioritizes speed. Data is kept in RAM and flushed to disk period
 
 | Operation | Iterations | Total Time (ms) | Avg Latency (ms) | Ops/Second |
 | --------- | ---------- | --------------- | ---------------- | ---------- |
-| set (simple) | 10,000 | 73.00 | 0.0073 | 136,994 |
-| set (nested) | 10,000 | 63.11 | 0.0063 | 158,449 |
-| get (existing) | 10,000 | 39.38 | 0.0039 | 253,948 |
-| get (default) | 10,000 | 12.47 | 0.0012 | 801,700 |
-| has (existing) | 10,000 | 21.13 | 0.0021 | 473,353 |
-| has (missing) | 10,000 | 13.69 | 0.0014 | 730,311 |
-| delete | 10,000 | 65.34 | 0.0065 | 153,035 |
-| add | 10,000 | 73.21 | 0.0073 | 136,590 |
-| subtract | 10,000 | 76.43 | 0.0076 | 130,833 |
-| push | 1,000 | 567.16 | 0.5672 | 1,763 |
-| pull | 100 | 55.50 | 0.5550 | 1,802 |
-| query.where().exec() | 1,000 | 2106.63 | 2.1066 | 475 |
-| query.sort().limit() | 1,000 | 2720.21 | 2.7202 | 368 |
-| query.count() | 10,000 | 21143.20 | 2.1143 | 473 |
-| query.sum() | 10,000 | 22316.08 | 2.2316 | 448 |
-| find (predicate) | 1,000 | 2157.82 | 2.1578 | 463 |
-| find (object) | 1,000 | 3681.05 | 3.6811 | 272 |
-| paginate | 1,000 | 2597.35 | 2.5974 | 385 |
-| findByIndex | 10,000 | 51.73 | 0.0052 | 193,306 |
-| batch (10 ops) | 1,000 | 13.79 | 0.0138 | 72,515 |
+| set (simple) | 10,000 | 37.51 | 0.0038 | 266,567 |
+| set (nested) | 10,000 | 43.50 | 0.0043 | 229,894 |
+| get (existing) | 10,000 | 13.11 | 0.0013 | 762,585 |
+| get (default) | 10,000 | 6.88 | 0.0007 | 1,453,881 |
+| has (existing) | 10,000 | 5.43 | 0.0005 | 1,842,944 |
+| has (missing) | 10,000 | 5.16 | 0.0005 | 1,938,518 |
+| delete | 10,000 | 30.13 | 0.0030 | 331,851 |
+| add | 10,000 | 30.01 | 0.0030 | 333,251 |
+| subtract | 10,000 | 29.88 | 0.0030 | 334,696 |
+| push | 1,000 | 291.05 | 0.2911 | 3,436 |
+| pull | 100 | 47.00 | 0.4700 | 2,127 |
+| query.where().exec() | 1,000 | 905.43 | 0.9054 | 1,104 |
+| query.sort().limit() | 1,000 | 1324.37 | 1.3244 | 755 |
+| query.count() | 10,000 | 8562.88 | 0.8563 | 1,168 |
+| query.sum() | 10,000 | 8727.72 | 0.8728 | 1,146 |
+| find (predicate) | 1,000 | 855.51 | 0.8555 | 1,169 |
+| find (object) | 1,000 | 848.12 | 0.8481 | 1,179 |
+| paginate | 1,000 | 863.80 | 0.8638 | 1,158 |
+| findByIndex | 10,000 | 19.53 | 0.0020 | 511,932 |
+| batch (10 ops) | 1,000 | 5.34 | 0.0053 | 187,280 |
 
 ### WAL Mode (Durable)
 
@@ -135,26 +70,26 @@ WAL mode provides crash safety by appending operations to a write-ahead log befo
 
 | Operation | Iterations | Total Time (ms) | Avg Latency (ms) | Ops/Second |
 | --------- | ---------- | --------------- | ---------------- | ---------- |
-| set (simple) | 10,000 | 5228.70 | 0.5229 | 1,913 |
-| set (nested) | 10,000 | 4071.26 | 0.4071 | 2,456 |
-| get (existing) | 10,000 | 49.74 | 0.0050 | 201,056 |
-| get (default) | 10,000 | 25.64 | 0.0026 | 389,956 |
-| has (existing) | 10,000 | 40.15 | 0.0040 | 249,051 |
-| has (missing) | 10,000 | 30.07 | 0.0030 | 332,594 |
-| delete | 10,000 | 3439.64 | 0.3440 | 2,907 |
-| add | 10,000 | 3477.97 | 0.3478 | 2,875 |
-| subtract | 10,000 | 3312.16 | 0.3312 | 3,019 |
-| push | 1,000 | 1353.73 | 1.3537 | 739 |
-| pull | 100 | 213.55 | 2.1355 | 468 |
-| query.where().exec() | 1,000 | 2626.36 | 2.6264 | 381 |
-| query.sort().limit() | 1,000 | 2893.09 | 2.8931 | 346 |
-| query.count() | 10,000 | 21495.98 | 2.1496 | 465 |
-| query.sum() | 10,000 | 21588.43 | 2.1588 | 463 |
-| find (predicate) | 1,000 | 2151.98 | 2.1520 | 465 |
-| find (object) | 1,000 | 2125.70 | 2.1257 | 470 |
-| paginate | 1,000 | 2170.92 | 2.1709 | 461 |
-| findByIndex | 10,000 | 36.38 | 0.0036 | 274,882 |
-| batch (10 ops) | 1,000 | 3931.98 | 3.9320 | 254 |
+| set (simple) | 10,000 | 40.89 | 0.0041 | 244,557 |
+| set (nested) | 10,000 | 41.39 | 0.0041 | 241,600 |
+| get (existing) | 10,000 | 10.07 | 0.0010 | 992,655 |
+| get (default) | 10,000 | 4.83 | 0.0005 | 2,069,142 |
+| has (existing) | 10,000 | 5.46 | 0.0005 | 1,830,801 |
+| has (missing) | 10,000 | 5.78 | 0.0006 | 1,729,562 |
+| delete | 10,000 | 31.10 | 0.0031 | 321,576 |
+| add | 10,000 | 29.90 | 0.0030 | 334,420 |
+| subtract | 10,000 | 29.39 | 0.0029 | 340,233 |
+| push | 1,000 | 309.89 | 0.3099 | 3,227 |
+| pull | 100 | 46.25 | 0.4625 | 2,162 |
+| query.where().exec() | 1,000 | 942.68 | 0.9427 | 1,061 |
+| query.sort().limit() | 1,000 | 1355.94 | 1.3559 | 737 |
+| query.count() | 10,000 | 8697.43 | 0.8697 | 1,150 |
+| query.sum() | 10,000 | 8947.00 | 0.8947 | 1,118 |
+| find (predicate) | 1,000 | 893.43 | 0.8934 | 1,119 |
+| find (object) | 1,000 | 875.83 | 0.8758 | 1,142 |
+| paginate | 1,000 | 873.13 | 0.8731 | 1,145 |
+| findByIndex | 10,000 | 22.16 | 0.0022 | 451,284 |
+| batch (10 ops) | 1,000 | 6.59 | 0.0066 | 151,731 |
 
 ## Interpretation
 

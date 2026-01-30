@@ -46,14 +46,29 @@ coverage/
 *.db.wal
 *.db.tmp
 *.json.wal
+*.json.idx
+*.json.lock
+
+# Test database files
+test_db.json*
+test_encrypted.json*
+test_lock.json*
+test_durability.json*
+test_crash_recovery.json*
+*.bak
+
+# Benchmark files
 benchmarks/*.json
 benchmarks/*.wal
 benchmarks/*.tmp
-test_db.json
-test_db.json.wal
-test_encrypted.json
-bench_db.json
-bench_db.json.wal
+benchmarks/*.idx
+benchmarks/*.lock
+bench_db.json*
+
+# Documentation files (generated/planning)
+LIMITATIONS.md
+Plan*.md
+CHANGELOG*.md
 
 # NAPI-RS Artifacts
 artifacts/

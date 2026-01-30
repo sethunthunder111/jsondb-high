@@ -3,29 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="jsondb-high - A blazing fast, Rust-powered JSON database for Node.js with 800k+ ops/sec read performance.">
-    <title>jsondb-high | Blazing Fast JSON Database</title>
+    <meta name="description" content="jsondb-high - A blazing fast, Rust-powered JSON database for Node.js with 2M+ ops/sec read performance.">
+    <title>jsondb-high | Blazing Fast JSON Database for Node.js</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <nav class="nav" id="nav">
         <div class="nav-container">
             <a href="index.html" class="nav-logo">
-                <span class="logo-bracket">{</span><span class="logo-text">jsondb</span><span class="logo-highlight">-high</span><span class="logo-bracket">}</span>
+                <span class="logo-icon">◈</span>
+                <span class="logo-text">jsondb-high</span>
             </a>
             <div class="nav-links">
                 <a href="index.html" class="nav-link active">Home</a>
                 <a href="docs.html" class="nav-link">Documentation</a>
                 <a href="benchmarks.html" class="nav-link">Benchmarks</a>
-                <a href="https://github.com/sethunthunder111/jsondb-high" class="nav-link nav-github" target="_blank">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                <a href="https://github.com/sethunthunder111/jsondb-high" class="nav-link nav-cta" target="_blank">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
                     GitHub
                 </a>
             </div>
-            <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation"><span></span><span></span><span></span></button>
+            <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+                <span></span><span></span><span></span>
+            </button>
         </div>
     </nav>
 
@@ -37,134 +40,343 @@
     </div>
 
     <section class="hero" id="hero">
-        <div class="hero-bg-grid"></div>
-        <div class="hero-particles" id="particles"></div>
+        <!-- Subtle Background Elements -->
+        <div class="hero-glow"></div>
+        <div class="hero-grid"></div>
         
-        <!-- New Parallax Layers -->
-        <div class="parallax-layer layer-1" data-parallax="-0.15">
-            <div class="floating-shape shape-1"></div>
-            <div class="floating-text" style="top: 20%; left: 10%; font-size: 10rem; opacity: 0.03;">JSON</div>
-        </div>
-        <div class="parallax-layer layer-2" data-parallax="-0.3">
-            <div class="floating-shape shape-2"></div>
-            <div class="floating-text" style="bottom: 15%; right: 5%; font-size: 15rem; opacity: 0.02;">DB</div>
+        <!-- Parallax Background Layer -->
+        <div class="hero-parallax-bg" data-parallax="0.03">
+            <div class="floating-line"></div>
+            <div class="floating-line"></div>
         </div>
         
-        <div class="hero-content" data-parallax="0.2">
-            <div class="hero-badge"><span class="badge-dot"></span><span>v4.0.1 — Now with SIMD Acceleration</span></div>
-            <h1 class="hero-title">
-                <span class="title-line" data-parallax="0.05">The JSON Database</span>
-                <span class="title-line title-accent" data-parallax="0.1">That Doesn't Sleep</span>
-            </h1>
-            <p class="hero-description" data-parallax="0.15">
-                A Rust-powered, zero-dependency JSON database achieving <strong class="highlight-number">800,000+ ops/sec</strong> reads and <strong class="highlight-number">136,000+ ops/sec</strong> writes. Built for developers who refuse to compromise.
-            </p>
-            <div class="hero-stats" data-parallax="0.2">
-                <div class="stat-card"><div class="stat-number" data-count="800">0</div><div class="stat-suffix">K+</div><div class="stat-label">Ops/Second</div></div>
-                <div class="stat-card"><div class="stat-number" data-count="0.001">0</div><div class="stat-suffix">ms</div><div class="stat-label">Avg Latency</div></div>
-                <div class="stat-card"><div class="stat-number" data-count="0">0</div><div class="stat-suffix"></div><div class="stat-label">Dependencies</div></div>
+        <div class="hero-container">
+            <div class="hero-content">
+                <div class="hero-badge">
+                    <span class="badge-pulse"></span>
+                    <span>v4.5 Now Available — 2M ops/sec</span>
+                </div>
+                
+                <h1 class="hero-title">
+                    The Fastest JSON Database<br>
+                    <span class="gradient-text">for Node.js</span>
+                </h1>
+                
+                <p class="hero-description">
+                    A Rust-powered, zero-dependency JSON database achieving <strong>2,000,000+ ops/sec</strong> reads 
+                    and <strong>260,000+ ops/sec</strong> writes. Built for production with multi-process safety and crash recovery.
+                </p>
+                
+                <div class="hero-stats">
+                    <div class="stat-item">
+                        <div class="stat-value">
+                            <span class="stat-number" data-count="2000">0</span>
+                            <span class="stat-unit">K+</span>
+                        </div>
+                        <div class="stat-label">Reads/sec</div>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat-item">
+                        <div class="stat-value">
+                            <span class="stat-number" data-count="0.5">0</span>
+                            <span class="stat-unit">µs</span>
+                        </div>
+                        <div class="stat-label">Avg Latency</div>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat-item">
+                        <div class="stat-value">
+                            <span class="stat-number" data-count="0">0</span>
+                            <span class="stat-unit"></span>
+                        </div>
+                        <div class="stat-label">Dependencies</div>
+                    </div>
+                </div>
+                
+                <div class="hero-actions">
+                    <a href="docs.html" class="btn btn-primary">
+                        Get Started
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </a>
+                    <a href="benchmarks.html" class="btn btn-secondary">View Benchmarks</a>
+                </div>
+                
+                <div class="install-box">
+                    <code>bun add jsondb-high</code>
+                    <button class="copy-btn" data-copy="bun add jsondb-high" aria-label="Copy">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2"/>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                    </button>
+                </div>
             </div>
-            <div class="hero-actions" data-parallax="0.25">
-                <a href="docs.html" class="btn btn-primary"><span>Get Started</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg></a>
-                <div class="install-command"><code>bun add jsondb-high</code><button class="copy-btn" data-copy="bun add jsondb-high" aria-label="Copy"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button></div>
-            </div>
-        </div>
-        <div class="hero-code" data-parallax="-0.2">
-            <div class="code-window">
-                <div class="code-header"><div class="code-dots"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div><span class="code-filename">example.ts</span></div>
-                <pre class="code-content"><code><span class="code-keyword">import</span> <span class="code-variable">JSONDatabase</span> <span class="code-keyword">from</span> <span class="code-string">'jsondb-high'</span>;
+            
+            <div class="hero-code" data-parallax="0.06">
+                <div class="code-window">
+                    <div class="code-header">
+                        <div class="code-dots">
+                            <span></span><span></span><span></span>
+                        </div>
+                        <span>example.ts</span>
+                    </div>
+                    <pre class="code-content"><code><span class="token-keyword">import</span> <span class="token-module">JSONDatabase</span> <span class="token-keyword">from</span> <span class="token-string">'jsondb-high'</span>;
 
-<span class="code-comment">// Initialize with blazing performance</span>
-<span class="code-keyword">const</span> <span class="code-variable">db</span> = <span class="code-keyword">new</span> <span class="code-function">JSONDatabase</span>(<span class="code-string">'data.json'</span>);
+<span class="token-comment">// Initialize database</span>
+<span class="token-keyword">const</span> <span class="token-variable">db</span> = <span class="token-keyword">new</span> <span class="token-function">JSONDatabase</span>(<span class="token-string">'data.json'</span>);
 
-<span class="code-comment">// Write data instantly</span>
-<span class="code-keyword">await</span> <span class="code-variable">db</span>.<span class="code-function">set</span>(<span class="code-string">'user.1'</span>, {
-  <span class="code-property">name</span>: <span class="code-string">'Alice'</span>,
-  <span class="code-property">role</span>: <span class="code-string">'admin'</span>
+<span class="token-comment">// Write data</span>
+<span class="token-keyword">await</span> <span class="token-variable">db</span>.<span class="token-method">set</span>(<span class="token-string">'user:1'</span>, {
+  <span class="token-property">name</span>: <span class="token-string">'Alice'</span>,
+  <span class="token-property">role</span>: <span class="token-string">'admin'</span>
 });
 
-<span class="code-comment">// Query with chainable API</span>
-<span class="code-keyword">const</span> <span class="code-variable">admins</span> = <span class="code-keyword">await</span> <span class="code-variable">db</span>.<span class="code-function">query</span>(<span class="code-string">'users'</span>)
-  .<span class="code-function">where</span>(<span class="code-string">'role'</span>).<span class="code-function">eq</span>(<span class="code-string">'admin'</span>)
-  .<span class="code-function">limit</span>(<span class="code-number">10</span>).<span class="code-function">exec</span>();</code></pre>
+<span class="token-comment">// Query with chainable API</span>
+<span class="token-keyword">const</span> <span class="token-variable">admins</span> = <span class="token-keyword">await</span> <span class="token-variable">db</span>.<span class="token-method">query</span>(<span class="token-string">'users'</span>)
+  .<span class="token-method">where</span>(<span class="token-string">'role'</span>).<span class="token-method">eq</span>(<span class="token-string">'admin'</span>)
+  .<span class="token-method">limit</span>(<span class="token-number">10</span>).<span class="token-method">exec</span>();</code></pre>
+                </div>
             </div>
         </div>
-        <div class="scroll-indicator"><div class="mouse"><div class="wheel"></div></div><span>Scroll to explore</span></div>
+        
+        <div class="scroll-hint">
+            <div class="scroll-line"></div>
+        </div>
     </section>
 
     <section class="features" id="features">
-        <div class="blueprint-bg"></div>
-        <div class="section-header" data-parallax="0.1">
-            <span class="section-tag">FEATURES</span>
-            <h2 class="section-title">Built Different.<br>Built Better.</h2>
-            <p class="section-description">Every feature engineered for maximum performance and developer experience.</p>
-        </div>
-        <div class="features-grid">
-            <div class="feature-card feature-large" data-parallax="0.05">
-                <div class="feature-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div>
-                <h3 class="feature-title">Blazing Fast</h3>
-                <p class="feature-description">Core logic written in Rust via N-API for native performance. Achieve 800k+ ops/sec on reads.</p>
-                <div class="feature-stats"><div class="mini-stat"><span class="mini-number">~90k</span><span class="mini-label">writes/sec</span></div><div class="mini-stat"><span class="mini-number">~800k</span><span class="mini-label">reads/sec</span></div></div>
+        <div class="section-container">
+            <div class="section-header">
+                <span class="section-tag">Features</span>
+                <h2 class="section-title">Built for Performance</h2>
+                <p class="section-subtitle">Every feature engineered for speed, reliability, and developer experience.</p>
             </div>
-            <div class="feature-card" data-parallax="0.08"><div class="feature-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg></div><h3 class="feature-title">Atomic Operations</h3><p class="feature-description">Write-Ahead Logging and atomic file swaps prevent data corruption.</p></div>
-            <div class="feature-card feature-highlight" data-parallax="0.1"><div class="feature-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"></rect><line x1="9" y1="4" x2="9" y2="20"></line><line x1="15" y1="4" x2="15" y2="20"></line><line x1="4" y1="9" x2="20" y2="9"></line><line x1="4" y1="15" x2="20" y2="15"></line></svg></div><h3 class="feature-title">Multi-Core Processing</h3><p class="feature-description">Adaptive parallelism using Rayon - automatically uses all CPU cores for large datasets.</p></div>
-            <div class="feature-card" data-parallax="0.1"><div class="feature-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></div><h3 class="feature-title">O(1) Indexing</h3><p class="feature-description">In-memory Map indices allow for instant lookups by field.</p></div>
-            <div class="feature-card" data-parallax="0.07"><div class="feature-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></div><h3 class="feature-title">AES-256 Encryption</h3><p class="feature-description">Optional AES-256-GCM encryption for data at rest.</p></div>
-            <div class="feature-card" data-parallax="0.09"><div class="feature-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div><h3 class="feature-title">TTL Support</h3><p class="feature-description">Auto-expire keys after a specified time, just like Redis.</p></div>
-            <div class="feature-card" data-parallax="0.06"><div class="feature-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg></div><h3 class="feature-title">Pub/Sub Events</h3><p class="feature-description">EventEmitter-style subscriptions to key changes.</p></div>
-            <div class="feature-card" data-parallax="0.11"><div class="feature-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></div><h3 class="feature-title">Aggregations</h3><p class="feature-description">Built-in sum, avg, min, max, groupBy, and distinct.</p></div>
-            <div class="feature-card" data-parallax="0.08"><div class="feature-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg></div><h3 class="feature-title">Zero Dependencies</h3><p class="feature-description">Self-contained native binary. No external DBs required.</p></div>
+            
+            <div class="features-grid">
+                <div class="feature-card featured" data-parallax="0.02">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Blazing Fast</h3>
+                    <p class="feature-desc">Rust-powered core via N-API delivers native performance with 2M+ ops/sec reads.</p>
+                    <div class="feature-metrics">
+                        <span>~2M reads/sec</span>
+                        <span>~260K writes/sec</span>
+                    </div>
+                </div>
+                
+                <div class="feature-card" data-parallax="0.04">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Crash Recovery</h3>
+                    <p class="feature-desc">Group Commit WAL with configurable durability modes for crash-safe writes.</p>
+                </div>
+                
+                <div class="feature-card" data-parallax="0.03">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="4" y="4" width="16" height="16" rx="2"/>
+                            <path d="M4 9h16M9 4v16"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Multi-Core</h3>
+                    <p class="feature-desc">Adaptive parallelism using Rayon automatically utilizes all CPU cores.</p>
+                </div>
+                
+                <div class="feature-card" data-parallax="0.05">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <path d="m21 21-4.35-4.35"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">O(1) Indexing</h3>
+                    <p class="feature-desc">In-memory Map indices enable instant lookups by any field.</p>
+                </div>
+                
+                <div class="feature-card" data-parallax="0.02">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">AES-256 Encryption</h3>
+                    <p class="feature-desc">Optional AES-256-GCM encryption keeps your data secure at rest.</p>
+                </div>
+                
+                <div class="feature-card" data-parallax="0.04">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">TTL Support</h3>
+                    <p class="feature-desc">Auto-expire keys after a specified time, just like Redis.</p>
+                </div>
+                
+                <div class="feature-card" data-parallax="0.03">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Pub/Sub Events</h3>
+                    <p class="feature-desc">EventEmitter-style subscriptions to monitor key changes in real-time.</p>
+                </div>
+                
+                <div class="feature-card" data-parallax="0.05">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="20" x2="18" y2="10"/>
+                            <line x1="12" y1="20" x2="12" y2="4"/>
+                            <line x1="6" y1="20" x2="6" y2="14"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Aggregations</h3>
+                    <p class="feature-desc">Built-in sum, avg, min, max, groupBy, and distinct operations.</p>
+                </div>
+                
+                <div class="feature-card" data-parallax="0.02">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="16 18 22 12 16 6"/>
+                            <polyline points="8 6 2 12 8 18"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Zero Dependencies</h3>
+                    <p class="feature-desc">Self-contained native binary. No external databases required.</p>
+                </div>
+            </div>
         </div>
     </section>
 
     <section class="architecture" id="architecture">
-        <div class="architecture-content">
-            <div class="architecture-text" data-parallax="0.1">
-                <span class="section-tag">ARCHITECTURE</span>
-                <h2 class="section-title">Hybrid Performance</h2>
-                <p class="section-description">Choose your consistency mode based on durability needs.</p>
-                <div class="mode-cards">
-                    <div class="mode-card"><div class="mode-header"><div class="mode-icon memory">⚡</div><h4>In-Memory Mode</h4></div><p>Maximum throughput at ~136k ops/sec.</p><div class="mode-code"><code>wal: <span class="code-boolean">false</span></code></div><ul class="mode-features"><li>Best for caching</li><li>Maximum speed</li><li>Periodic persistence</li></ul></div>
-                    <div class="mode-card"><div class="mode-header"><div class="mode-icon durable">🛡️</div><h4>WAL Mode (Durable)</h4></div><p>Crash-safe writes at ~3k ops/sec.</p><div class="mode-code"><code>wal: <span class="code-boolean">true</span></code></div><ul class="mode-features"><li>ACID compliant</li><li>Crash recovery</li><li>Financial grade</li></ul></div>
+        <div class="section-container">
+            <div class="arch-layout">
+                <div class="arch-content">
+                    <span class="section-tag">Architecture</span>
+                    <h2 class="section-title">Hybrid Performance Model</h2>
+                    <p class="section-subtitle">Choose your consistency mode based on your durability needs.</p>
+                    
+                    <div class="mode-list">
+                        <div class="mode-item">
+                            <div class="mode-indicator memory"></div>
+                            <div class="mode-info">
+                                <h4>In-Memory Mode</h4>
+                                <p>Maximum throughput at ~260k ops/sec. Best for caching and temporary data.</p>
+                                <code>durability: 'none'</code>
+                            </div>
+                        </div>
+                        <div class="mode-item">
+                            <div class="mode-indicator durable"></div>
+                            <div class="mode-info">
+                                <h4>WAL Mode (Durable)</h4>
+                                <p>Crash-safe writes at ~80k ops/sec. Full persistence with recovery.</p>
+                                <code>durability: 'batched'</code>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div class="architecture-visual" data-parallax="-0.1">
-                <div class="arch-diagram">
-                    <div class="arch-layer app"><span class="layer-label">Your Application</span><div class="layer-box">Node.js / TypeScript</div></div>
-                    <div class="arch-arrow">↓</div>
-                    <div class="arch-layer api"><span class="layer-label">jsondb-high API</span><div class="layer-box">Query Builder • Middleware • Events</div></div>
-                    <div class="arch-arrow">↓</div>
-                    <div class="arch-layer rust"><span class="layer-label">Rust Core (N-API)</span><div class="layer-box">SIMD • Zero-Copy • Worker Pool</div></div>
-                    <div class="arch-arrow">↓</div>
-                    <div class="arch-layer storage"><span class="layer-label">Storage Engine</span><div class="layer-split"><div class="layer-box small">In-Memory</div><div class="layer-box small">WAL</div></div></div>
+                
+                <div class="arch-diagram" data-parallax="0.04">
+                    <div class="arch-layer">
+                        <span class="layer-name">Application</span>
+                        <div class="layer-box">Node.js / TypeScript</div>
+                    </div>
+                    <div class="arch-connector"></div>
+                    <div class="arch-layer">
+                        <span class="layer-name">API Layer</span>
+                        <div class="layer-box">Query Builder • Middleware • Events</div>
+                    </div>
+                    <div class="arch-connector"></div>
+                    <div class="arch-layer highlight">
+                        <span class="layer-name">Rust Core</span>
+                        <div class="layer-box">SIMD • Zero-Copy • Worker Pool</div>
+                    </div>
+                    <div class="arch-connector"></div>
+                    <div class="arch-layer">
+                        <span class="layer-name">Storage</span>
+                        <div class="layer-row">
+                            <div class="layer-box">Memory</div>
+                            <div class="layer-box">WAL</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </section>
 
     <section class="cta" id="cta">
-        <div class="cta-bg"></div>
-        <div class="cta-content" data-parallax="0.1">
-            <h2 class="cta-title">Ready to Build Something Fast?</h2>
-            <p class="cta-description">Join developers using jsondb-high for high-performance projects.</p>
-            <div class="cta-actions">
-                <a href="docs.html" class="btn btn-primary btn-large"><span>Read the Docs</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg></a>
-                <a href="benchmarks.html" class="btn btn-outline btn-large">View Benchmarks</a>
+        <div class="cta-glow"></div>
+        <div class="section-container">
+            <div class="cta-content">
+                <h2 class="cta-title">Ready to get started?</h2>
+                <p class="cta-subtitle">Join thousands of developers building high-performance applications with jsondb-high.</p>
+                <div class="cta-actions">
+                    <a href="docs.html" class="btn btn-primary btn-large">
+                        Read Documentation
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </a>
+                    <a href="benchmarks.html" class="btn btn-outline btn-large">View Benchmarks</a>
+                </div>
             </div>
         </div>
     </section>
 
-    <footer class="footer" id="footer">
-        <div class="footer-content">
-            <div class="footer-main">
-                <div class="footer-brand"><a href="index.html" class="footer-logo"><span class="logo-bracket">{</span><span class="logo-text">jsondb</span><span class="logo-highlight">-high</span><span class="logo-bracket">}</span></a><p class="footer-tagline">A blazing fast, Rust-powered JSON database for Node.js</p></div>
+    <footer class="footer">
+        <div class="section-container">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <a href="index.html" class="footer-logo">
+                        <span class="logo-icon">◈</span>
+                        <span>jsondb-high</span>
+                    </a>
+                    <p>A blazing fast, Rust-powered JSON database for Node.js.</p>
+                </div>
                 <div class="footer-links">
-                    <div class="footer-column"><h4>Documentation</h4><a href="docs.html#getting-started">Getting Started</a><a href="docs.html#api-reference">API Reference</a><a href="docs.html#examples">Examples</a></div>
-                    <div class="footer-column"><h4>Resources</h4><a href="benchmarks.html">Benchmarks</a><a href="https://github.com/sethunthunder111/jsondb-high" target="_blank">GitHub</a><a href="https://www.npmjs.com/package/jsondb-high" target="_blank">NPM</a></div>
-                    <div class="footer-column"><h4>Community</h4><a href="https://github.com/sethunthunder111/jsondb-high/blob/main/CONTRIBUTING.md" target="_blank">Contributing</a><a href="https://github.com/sethunthunder111/jsondb-high/blob/main/LICENSE" target="_blank">License (MIT)</a></div>
+                    <div class="footer-col">
+                        <h4>Documentation</h4>
+                        <a href="docs.html#getting-started">Getting Started</a>
+                        <a href="docs.html#api-reference">API Reference</a>
+                        <a href="docs.html#examples">Examples</a>
+                    </div>
+                    <div class="footer-col">
+                        <h4>Resources</h4>
+                        <a href="benchmarks.html">Benchmarks</a>
+                        <a href="https://github.com/sethunthunder111/jsondb-high" target="_blank">GitHub</a>
+                        <a href="https://www.npmjs.com/package/jsondb-high" target="_blank">NPM</a>
+                    </div>
+                    <div class="footer-col">
+                        <h4>Community</h4>
+                        <a href="https://github.com/sethunthunder111/jsondb-high/issues" target="_blank">Issues</a>
+                        <a href="https://github.com/sethunthunder111/jsondb-high/blob/main/CONTRIBUTING.md" target="_blank">Contributing</a>
+                        <a href="https://github.com/sethunthunder111/jsondb-high/blob/main/LICENSE" target="_blank">License</a>
+                    </div>
                 </div>
             </div>
-            <div class="footer-bottom"><p class="footer-copyright">© 2026 jsondb-high. Released under the MIT License.</p><div class="footer-tech"><span>Built with</span><span class="tech-icon">🦀 Rust</span><span class="tech-icon">⚡ N-API</span><span class="tech-icon">💚 Node.js</span></div></div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 jsondb-high. Released under the MIT License.</p>
+                <div class="footer-tech">
+                    <span>Built with</span>
+                    <span class="tech-badge">Rust</span>
+                    <span class="tech-badge">N-API</span>
+                    <span class="tech-badge">Node.js</span>
+                </div>
+            </div>
         </div>
     </footer>
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="jsondb-high Benchmarks - Performance metrics showing 800k+ ops/sec reads and 136k+ ops/sec writes.">
+    <meta name="description" content="jsondb-high Benchmarks - Performance metrics showing 2M+ ops/sec reads and 260k+ ops/sec writes.">
     <title>Benchmarks | jsondb-high</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -36,15 +36,24 @@
     </div>
 
     <section class="benchmarks-hero">
+        <!-- Animated Background Elements -->
+        <div class="hero-grid"></div>
+        <div class="hero-glow" data-parallax="0.3"></div>
+        
         <div class="section-header">
-            <span class="section-tag">PERFORMANCE</span>
+            <span class="section-tag">⚡ PERFORMANCE</span>
             <h1 class="section-title">Benchmark Results</h1>
-            <p class="section-description">Real-world performance metrics for jsondb-high v4.0.0. All tests run with 10,000 iterations after 1,000 warmup rounds.</p>
+            <p class="section-description">Real-world performance metrics for jsondb-high v4.5.<br>All tests run with 10,000 iterations after 1,000 warmup rounds.</p>
         </div>
         <div class="benchmark-meta">
-            <div class="meta-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg><span>Platform: Windows x64</span></div>
+            <div class="meta-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg><span>Platform: Linux x64</span></div>
             <div class="meta-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>Node.js v24.3.0</span></div>
             <div class="meta-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span>10,000 iterations</span></div>
+        </div>
+        
+        <!-- Scroll indicator -->
+        <div class="scroll-hint" style="position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%); opacity: 0.5;">
+            <div class="scroll-line"></div>
         </div>
     </section>
 
@@ -67,9 +76,9 @@
             </div>
             <div class="evolution-card current">
                 <div class="evolution-gen">High Performance</div>
-                <div class="evolution-name">jsondb-high (v4)</div>
+                <div class="evolution-name">jsondb-high (v4.5)</div>
                 <div class="evolution-engine">Advanced Rust 🦀</div>
-                <div class="evolution-feature">Zero-Copy + SIMD</div>
+                <div class="evolution-feature">Group Commit WAL + Locking</div>
             </div>
         </div>
 
@@ -100,7 +109,7 @@
                 <tbody>
                     <tr><td>v2.0</td><td>Standard JS</td><td>~12,000</td><td>⚠️ Unsafe (Data Loss Risk)</td></tr>
                     <tr><td>v3.1</td><td>Rust WAL</td><td>~38,514</td><td>✅ Durable (ACID)</td></tr>
-                    <tr><td class="highlight-cell">jsondb-high</td><td>Elite In-Memory</td><td class="highlight-cell">~136,994</td><td>✅ Periodic Persist</td></tr>
+                    <tr><td class="highlight-cell">jsondb-high v4.5</td><td>Group Commit WAL</td><td class="highlight-cell">~266,567</td><td>✅ Crash Recovery + Locking</td></tr>
                 </tbody>
             </table>
         </div>
@@ -108,10 +117,10 @@
 
     <section class="benchmark-section">
         <h2><span>📊</span> Current Version Performance</h2>
-        <p>Detailed benchmark results for jsondb-high v4.0.0 across all operations.</p>
+        <p>Detailed benchmark results for jsondb-high v4.5 across all operations.</p>
 
         <div class="system-info">
-            <div class="system-item"><span class="system-label">Platform:</span><span class="system-value">win32</span></div>
+            <div class="system-item"><span class="system-label">Platform:</span><span class="system-value">linux</span></div>
             <div class="system-item"><span class="system-label">Architecture:</span><span class="system-value">x64</span></div>
             <div class="system-item"><span class="system-label">Node Version:</span><span class="system-value">v24.3.0</span></div>
             <div class="system-item"><span class="system-label">Iterations:</span><span class="system-value">10,000</span></div>
@@ -124,19 +133,19 @@
                     <tr><th>Operation</th><th>In-Memory (ops/s)</th><th>WAL Mode (ops/s)</th><th>Avg Latency</th></tr>
                 </thead>
                 <tbody>
-                    <tr><td>set (simple)</td><td class="highlight-cell">136,994</td><td>1,913</td><td>0.007ms</td></tr>
-                    <tr><td>set (nested)</td><td class="highlight-cell">158,449</td><td>2,456</td><td>0.006ms</td></tr>
-                    <tr><td>get (existing)</td><td class="highlight-cell">253,948</td><td>201,056</td><td>0.004ms</td></tr>
-                    <tr><td>get (default)</td><td class="highlight-cell">801,700</td><td>389,956</td><td>0.001ms</td></tr>
-                    <tr><td>has (existing)</td><td class="highlight-cell">473,353</td><td>249,051</td><td>0.002ms</td></tr>
-                    <tr><td>has (missing)</td><td class="highlight-cell">730,311</td><td>332,594</td><td>0.001ms</td></tr>
-                    <tr><td>delete</td><td class="highlight-cell">153,035</td><td>2,907</td><td>0.007ms</td></tr>
-                    <tr><td>add</td><td class="highlight-cell">136,590</td><td>2,875</td><td>0.007ms</td></tr>
-                    <tr><td>subtract</td><td class="highlight-cell">130,833</td><td>3,019</td><td>0.008ms</td></tr>
-                    <tr><td>findByIndex</td><td class="highlight-cell">193,306</td><td>274,882</td><td>0.005ms</td></tr>
-                    <tr><td>batch (10 ops)</td><td class="highlight-cell">72,515</td><td>254</td><td>0.014ms</td></tr>
-                    <tr><td>query.where().exec()</td><td>475</td><td>381</td><td>2.11ms</td></tr>
-                    <tr><td>query.count()</td><td>473</td><td>465</td><td>2.11ms</td></tr>
+                    <tr><td>set (simple)</td><td class="highlight-cell">266,567</td><td>244,557</td><td>0.0038ms</td></tr>
+                    <tr><td>set (nested)</td><td class="highlight-cell">229,894</td><td>241,600</td><td>0.0043ms</td></tr>
+                    <tr><td>get (existing)</td><td class="highlight-cell">762,585</td><td>992,655</td><td>0.0013ms</td></tr>
+                    <tr><td>get (default)</td><td class="highlight-cell">1,453,881</td><td>2,069,142</td><td>0.0007ms</td></tr>
+                    <tr><td>has (existing)</td><td class="highlight-cell">1,842,944</td><td>1,830,801</td><td>0.0005ms</td></tr>
+                    <tr><td>has (missing)</td><td class="highlight-cell">1,938,518</td><td>1,729,562</td><td>0.0005ms</td></tr>
+                    <tr><td>delete</td><td class="highlight-cell">331,851</td><td>321,576</td><td>0.0030ms</td></tr>
+                    <tr><td>add</td><td class="highlight-cell">333,251</td><td>334,420</td><td>0.0030ms</td></tr>
+                    <tr><td>subtract</td><td class="highlight-cell">334,696</td><td>340,233</td><td>0.0030ms</td></tr>
+                    <tr><td>findByIndex</td><td class="highlight-cell">511,932</td><td>451,284</td><td>0.0020ms</td></tr>
+                    <tr><td>batch (10 ops)</td><td class="highlight-cell">187,280</td><td>151,731</td><td>0.0053ms</td></tr>
+                    <tr><td>query.where().exec()</td><td>1,104</td><td>1,061</td><td>0.91ms</td></tr>
+                    <tr><td>query.count()</td><td>1,168</td><td>1,150</td><td>0.86ms</td></tr>
                 </tbody>
             </table>
         </div>
@@ -151,32 +160,32 @@
                 <h4>get (default value)</h4>
                 <div class="performance-bar"><div class="performance-bar-fill memory" data-width="100%"></div></div>
                 <div class="performance-stats">
-                    <div class="perf-stat"><div class="perf-stat-value">801,700</div><div class="perf-stat-label">In-Memory</div></div>
-                    <div class="perf-stat"><div class="perf-stat-value">389,956</div><div class="perf-stat-label">WAL Mode</div></div>
+                    <div class="perf-stat"><div class="perf-stat-value">1,453,881</div><div class="perf-stat-label">In-Memory</div></div>
+                    <div class="perf-stat"><div class="perf-stat-value">2,069,142</div><div class="perf-stat-label">WAL Mode</div></div>
                 </div>
             </div>
             <div class="performance-card">
                 <h4>has (missing key)</h4>
-                <div class="performance-bar"><div class="performance-bar-fill memory" data-width="91%"></div></div>
+                <div class="performance-bar"><div class="performance-bar-fill memory" data-width="100%"></div></div>
                 <div class="performance-stats">
-                    <div class="perf-stat"><div class="perf-stat-value">730,311</div><div class="perf-stat-label">In-Memory</div></div>
-                    <div class="perf-stat"><div class="perf-stat-value">332,594</div><div class="perf-stat-label">WAL Mode</div></div>
+                    <div class="perf-stat"><div class="perf-stat-value">1,938,518</div><div class="perf-stat-label">In-Memory</div></div>
+                    <div class="perf-stat"><div class="perf-stat-value">1,729,562</div><div class="perf-stat-label">WAL Mode</div></div>
                 </div>
             </div>
             <div class="performance-card">
                 <h4>set (nested path)</h4>
-                <div class="performance-bar"><div class="performance-bar-fill memory" data-width="20%"></div></div>
+                <div class="performance-bar"><div class="performance-bar-fill memory" data-width="95%"></div></div>
                 <div class="performance-stats">
-                    <div class="perf-stat"><div class="perf-stat-value">158,449</div><div class="perf-stat-label">In-Memory</div></div>
-                    <div class="perf-stat"><div class="perf-stat-value">2,456</div><div class="perf-stat-label">WAL Mode</div></div>
+                    <div class="perf-stat"><div class="perf-stat-value">229,894</div><div class="perf-stat-label">In-Memory</div></div>
+                    <div class="perf-stat"><div class="perf-stat-value">241,600</div><div class="perf-stat-label">WAL Mode</div></div>
                 </div>
             </div>
             <div class="performance-card">
                 <h4>findByIndex (O(1))</h4>
-                <div class="performance-bar"><div class="performance-bar-fill wal" data-width="34%"></div></div>
+                <div class="performance-bar"><div class="performance-bar-fill wal" data-width="88%"></div></div>
                 <div class="performance-stats">
-                    <div class="perf-stat"><div class="perf-stat-value">193,306</div><div class="perf-stat-label">In-Memory</div></div>
-                    <div class="perf-stat"><div class="perf-stat-value">274,882</div><div class="perf-stat-label">WAL Mode</div></div>
+                    <div class="perf-stat"><div class="perf-stat-value">511,932</div><div class="perf-stat-label">In-Memory</div></div>
+                    <div class="perf-stat"><div class="perf-stat-value">451,284</div><div class="perf-stat-label">WAL Mode</div></div>
                 </div>
             </div>
         </div>
@@ -186,10 +195,10 @@
         <h2><span>🎯</span> Key Insights</h2>
         
         <div class="insights-grid">
-            <div class="insight-card"><h4>🔥 Read Operations</h4><p><code>get</code> and <code>has</code> are extremely fast (~730k-800k ops/s) since they only access in-memory data.</p></div>
-            <div class="insight-card"><h4>✍️ Write Operations</h4><p><code>set</code> and <code>delete</code> achieve ~140k+ ops/s in In-Memory mode while WAL trades speed for durability.</p></div>
-            <div class="insight-card"><h4>🔍 Index Lookups</h4><p><code>findByIndex</code> provides O(1) performance regardless of dataset size - perfect for large collections.</p></div>
-            <div class="insight-card"><h4>📦 Batch Operations</h4><p>Batching multiple writes into single calls provides 72k ops/s - ideal for bulk imports.</p></div>
+            <div class="insight-card"><h4>🔥 Read Operations</h4><p><code>get</code> and <code>has</code> are extremely fast (~1.5M-2M ops/s) since they only access in-memory data. WAL mode is now equally fast!</p></div>
+            <div class="insight-card"><h4>✍️ Write Operations</h4><p><code>set</code> and <code>delete</code> achieve ~260k+ ops/s. With Group Commit WAL, durable mode is almost as fast as in-memory.</p></div>
+            <div class="insight-card"><h4>🔍 Index Lookups</h4><p><code>findByIndex</code> provides O(1) performance (500k+ ops/s) regardless of dataset size - perfect for large collections.</p></div>
+            <div class="insight-card"><h4>📦 Batch Operations</h4><p>Batching multiple writes into single calls provides 187k ops/s - ideal for bulk imports.</p></div>
         </div>
 
         <h3>Use Case Recommendations</h3>

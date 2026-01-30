@@ -380,7 +380,10 @@ async function main() {
     await runMathBenchmarks(dbInMemory, 'In-Memory');
     await runArrayBenchmarks(dbInMemory, 'In-Memory');
     await runQueryBenchmarks(dbInMemory, 'In-Memory');
+    await dbInMemory.close(); // Release lock
+    
     await runIndexBenchmarks('In-Memory');
+    
     cleanup();
     const dbInMemory2 = new JSONDatabase(DB_FILE, { wal: false });
     await runBatchBenchmarks(dbInMemory2, 'In-Memory');
@@ -396,7 +399,10 @@ async function main() {
     await runMathBenchmarks(dbWal, 'WAL');
     await runArrayBenchmarks(dbWal, 'WAL');
     await runQueryBenchmarks(dbWal, 'WAL');
+    await dbWal.close(); // Release lock
+    
     await runIndexBenchmarks('WAL');
+    
     cleanup();
     const dbWal2 = new JSONDatabase(DB_FILE, { wal: true });
     await runBatchBenchmarks(dbWal2, 'WAL');

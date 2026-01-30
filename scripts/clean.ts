@@ -2,18 +2,25 @@ import { unlinkSync, readdirSync, lstatSync } from "fs";
 import { join } from "path";
 
 const rootFilesToClean = [
-  /^test_db\.json.*$/,
-  /^test_encrypted\.json.*$/,
-  /^bench_db\.json.*$/,
-  /\.bak$/,
-  /\.db.*$/,
-  /\.json\.wal$/,
+  /^test_db\.json.*$/,          // test_db.json, test_db.json.wal, test_db.json.email.idx, etc.
+  /^test_encrypted\.json.*$/,   // test_encrypted.json, .wal, etc.
+  /^test_lock\.json.*$/,        // test_lock.json, .wal, etc.
+  /^test_durability\.json.*$/,  // test_durability.json, .wal, etc.
+  /^test_crash_recovery\.json.*$/, // test_crash_recovery.json, .wal, etc.
+  /\.bak$/,                     // Backup files
+  /\.db.*$/,                    // Database-related files
+  /\.json\.wal$/,              // WAL files
+  /\.json\.idx$/,              // Index files
+  /\.json\.lock$/,             // Lock files (only for json databases)
 ];
 
 const benchmarkFilesToClean = [
-  /\.json$/,
-  /\.wal$/,
-  /\.tmp$/,
+  /bench_db\.json.*$/,          // bench_db.json and all related files (.wal, .idx, etc.)
+  /\.json$/,                    // Any json files
+  /\.wal$/,                     // WAL files
+  /\.tmp$/,                     // Temp files
+  /\.idx$/,                     // Index files
+  /\.lock$/,                    // Lock files
 ];
 
 function cleanDir(dir: string, patterns: RegExp[]) {

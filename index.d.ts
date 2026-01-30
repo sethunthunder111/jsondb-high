@@ -5,7 +5,7 @@ import { EventEmitter } from 'events';
 /** Query filter for parallel batch queries */
 export interface QueryFilter {
   field: string
-  op: string
+  op: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'contains' | 'startswith' | 'endswith' | 'in' | 'notin' | 'regex' | 'containsAll' | 'containsAny'
   value: any
 }
 /** Batch query request */
@@ -19,6 +19,14 @@ export interface ParallelResult {
   count: number
   error?: string
 }
+/** Parallel left outer join config */
+export interface JoinConfig {
+    from: string;
+    to: string;
+    localField: string;
+    foreignField: string;
+    as: string;
+}
 /** System resource info */
 export interface SystemInfo {
   availableCores: number
@@ -28,10 +36,22 @@ export interface SystemInfo {
 export type NativeDB = NativeDb
 export declare class NativeDb {
   constructor(path: string, wal: boolean)
+  /** v4.5: Create database with full options */
+  static newWithOptions(
+    path: string,
+    lockMode: string,
+    durability: string,
+    walBatchSize?: number,
+    walFlushMs?: number
+  ): NativeDb
   /** Get system resource information for adaptive parallelism */
   getSystemInfo(): SystemInfo
   load(): void
   save(): void
+  /** v4.5: Explicit sync for durability */
+  sync(): void
+  /** v4.5: Get WAL status */
+  walStatus(): any
   /**
    * Execute batch set operations in parallel when beneficial
    * Automatically falls back to sequential for small batches
@@ -44,11 +64,27 @@ export declare class NativeDb {
   parallelQuery(path: string, filters: Array<QueryFilter>): any
   /** Parallel aggregation operations */
   parallelAggregate(path: string, operation: string, field?: string | undefined | null): any
+  /** 
+   * Parallel left outer join (lookup) operations 
+   * Returns collection with embedded matches
+   */
+  parallelLookup(leftPath: string, rightPath: string, leftField: string, rightField: string, asField: string): any
   get(path: string): any
   set(path: string, value: any): void
   has(path: string): boolean
   delete(path: string): void
   push(path: string, value: any): void
+  registerIndex(name: string, field: string): void
+  updateIndex(name: string, key: any, path: string, isDelete: boolean): void
+  findIndexPaths(name: string, key: any): Array<string>
+  clearIndex(name: string): void
+  registerSchema(path: string, schemaJson: string): void
+  validatePath(path: string, value: any): void
+  begin_transaction(): void
+  commit_transaction(): void
+  rollback_transaction(): void
+  create_savepoint(name: string): void
+  rollback_to_savepoint(name: string): void
 }
 
 /* TypeScript Wrapper Types */
@@ -65,11 +101,46 @@ export interface MiddlewareContext<T = unknown> {
     timestamp: number;
 }
 export type MiddlewareFn<T = unknown> = (ctx: MiddlewareContext<T>) => MiddlewareContext<T> | void;
+
+export type SchemaType = 'object' | 'array' | 'string' | 'number' | 'boolean' | 'null';
+
+export interface Schema {
+    type: SchemaType;
+    properties?: Record<string, Schema>;
+    required?: string[];
+    minLength?: number;
+    maxLength?: number;
+    pattern?: string;
+    minimum?: number;
+    maximum?: number;
+    exclusiveMinimum?: number;
+    exclusiveMaximum?: number;
+    items?: Schema;
+    minItems?: number;
+    maxItems?: number;
+    uniqueItems?: boolean;
+    enum?: unknown[];
+}
+
 export interface DBOptions {
     indices?: IndexConfig[];
     wal?: boolean;
     encryptionKey?: string;
     autoSaveInterval?: number;
+    /** v4.5: Process locking mode */
+    lockMode?: 'exclusive' | 'shared' | 'none';
+    /** v4.5: Lock timeout in ms */
+    lockTimeoutMs?: number;
+    /** v4.5: Durability mode */
+    durability?: 'none' | 'lazy' | 'batched' | 'sync';
+    /** v4.5: WAL batch size */
+    walBatchSize?: number;
+    /** v4.5: WAL flush interval in ms */
+    walFlushMs?: number;
+    /** v5.1: Path-based schemas */
+    schemas?: Record<string, Schema>;
+    /** v5.1: Slow query threshold in ms */
+    slowQueryThresholdMs?: number;
 }
 export interface TTLEntry {
     path: string;
@@ -165,11 +236,26 @@ export declare class JSONDatabase extends EventEmitter {
     private ttlMap;
     private ttlEntries;
     private subscriptions;
+    private walBatchSize: number;
+    private walFlushMs: number;
+    private slowQueryThresholdMs: number;
+
     constructor(filePath: string, options?: DBOptions);
     /**
      * Force save to disk immediately
      */
     save(): Promise<void>;
+    /**
+     * v4.5: Explicit sync for durability
+     */
+    sync(): Promise<void>;
+    /**
+     * v4.5: Get WAL status
+     */
+    walStatus(): {
+        enabled: boolean;
+        committedLsn?: number;
+    };
     /**
      * Close the database gracefully
      */

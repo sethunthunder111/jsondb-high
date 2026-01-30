@@ -56,7 +56,7 @@
     </div>
 
     <div class="docs-layout">
-      <aside class="docs-sidebar">
+      <aside class="docs-sidebar" data-lenis-prevent>
         <div class="sidebar-section">
           <div class="sidebar-title">Getting Started</div>
           <ul class="sidebar-links">
@@ -184,7 +184,11 @@
         <ul>
           <li>
             <strong>⚡ Blazing Fast</strong> - Core logic in Rust via N-API
-            (~800k ops/sec reads, ~136k ops/sec writes)
+            (~2M ops/sec reads, ~260k ops/sec writes)
+          </li>
+          <li>
+            <strong>🔒 Multi-Process Safe</strong> - OS-level file locking
+            prevents data corruption
           </li>
           <li>
             <strong>🧵 Multi-Core Processing</strong> - Adaptive parallelism
@@ -285,7 +289,15 @@ console.<span class="code-function">log</span>(user);
         </p>
 
         <pre><code><span class="code-keyword">const</span> db = <span class="code-keyword">new</span> <span class="code-function">JSONDatabase</span>(<span class="code-string">'data.json'</span>, {
-    <span class="code-comment">// Enable Write-Ahead Logging for crash safety</span>
+    <span class="code-comment">// Multi-process file locking (v4.5+)</span>
+    lockMode: <span class="code-string">'exclusive'</span>,  <span class="code-comment">// 'exclusive' | 'shared' | 'none'</span>
+    
+    <span class="code-comment">// Durability mode (v4.5+)</span>
+    durability: <span class="code-string">'batched'</span>,    <span class="code-comment">// 'none' | 'lazy' | 'batched' | 'sync'</span>
+    walBatchSize: <span class="code-number">1000</span>,
+    walFlushMs: <span class="code-number">10</span>,
+    
+    <span class="code-comment">// Legacy WAL option (still supported)</span>
     wal: <span class="code-boolean">true</span>,
     
     <span class="code-comment">// Define indices for O(1) lookups</span>
@@ -298,15 +310,32 @@ console.<span class="code-function">log</span>(user);
     encryptionKey: <span class="code-string">'your-32-character-secret-key!!'</span>
 });</code></pre>
 
+        <h3>Lock Modes (v4.5+)</h3>
+        <table class="comparison-table">
+          <tr><th>Mode</th><th>Description</th></tr>
+          <tr><td><code>exclusive</code></td><td>Acquires exclusive lock, prevents other processes (safest for writers)</td></tr>
+          <tr><td><code>shared</code></td><td>Read-only mode, fails if exclusive lock exists</td></tr>
+          <tr><td><code>none</code></td><td>No locking (fastest, single-process only) - default for backwards compatibility</td></tr>
+        </table>
+
+        <h3>Durability Modes (v4.5+)</h3>
+        <table class="comparison-table">
+          <tr><th>Mode</th><th>Throughput</th><th>Latency</th><th>Durability Window</th></tr>
+          <tr><td><code>none</code></td><td>~260k ops/sec</td><td>0.003ms</td><td>Manual save only</td></tr>
+          <tr><td><code>lazy</code></td><td>~200k ops/sec</td><td>0.003ms</td><td>100ms</td></tr>
+          <tr><td><code>batched</code></td><td>~240k ops/sec</td><td>5ms</td><td>10ms (recommended)</td></tr>
+          <tr><td><code>sync</code></td><td>~2k ops/sec</td><td>0.5ms</td><td>Immediate</td></tr>
+        </table>
+
         <h2 id="storage-modes">Storage Modes</h2>
         <p>
-          jsondb-high offers two storage consistency modes. Choose based on your
+          jsondb-high offers multiple storage consistency modes. Choose based on your
           durability requirements:
         </p>
 
         <h3>In-Memory Mode (Default)</h3>
         <p>
-          Maximum throughput at ~136k ops/sec. Data is kept in RAM and flushed
+          Maximum throughput at ~260k ops/sec. Data is kept in RAM and flushed
           to disk periodically.
         </p>
         <pre><code><span class="code-keyword">const</span> db = <span class="code-keyword">new</span> <span class="code-function">JSONDatabase</span>(<span class="code-string">'data.json'</span>, {
@@ -323,12 +352,17 @@ console.<span class="code-function">log</span>(user);
 
         <h3>WAL Mode (Durable)</h3>
         <p>
-          Crash-safe writes at ~3k ops/sec. Every write is appended to a
-          Write-Ahead Log immediately.
+          Crash-safe writes with Group Commit WAL. v4.5 introduces batched durability
+          that achieves ~240k ops/sec while maintaining crash safety.
         </p>
         <pre><code><span class="code-keyword">const</span> db = <span class="code-keyword">new</span> <span class="code-function">JSONDatabase</span>(<span class="code-string">'data.json'</span>, {
-    wal: <span class="code-boolean">true</span>
-});</code></pre>
+    lockMode: <span class="code-string">'exclusive'</span>,    <span class="code-comment">// Multi-process safety</span>
+    durability: <span class="code-string">'batched'</span>,     <span class="code-comment">// Group commits every 10ms</span>
+});
+
+<span class="code-comment">// For critical operations, explicitly sync</span>
+<span class="code-keyword">await</span> db.<span class="code-function">set</span>(<span class="code-string">'critical.data'</span>, value);
+<span class="code-keyword">await</span> db.<span class="code-function">sync</span>();  <span class="code-comment">// Guaranteed durable</span></code></pre>
 
         <div class="info-box tip">
           <div class="info-box-title">✅ Best for</div>
@@ -732,8 +766,17 @@ console.<span class="code-function">log</span>(<span class="code-string">'Backup
 <span class="code-comment">// Force an immediate save to disk</span>
 <span class="code-keyword">await</span> db.<span class="code-function">save</span>();
 
+<span class="code-comment">// Explicit durability sync (v4.5+)</span>
+<span class="code-keyword">await</span> db.<span class="code-function">sync</span>();
+
+<span class="code-comment">// Check WAL status (v4.5+)</span>
+<span class="code-keyword">const</span> status = db.<span class="code-function">walStatus</span>();
+<span class="code-comment">// { enabled: true, committedLsn: 12345 }</span>
+
 <span class="code-comment">// Gracefully close the database</span>
 <span class="code-keyword">await</span> db.<span class="code-function">close</span>();</code></pre>
+
+        <h2 id="middleware">Middleware</h2>
         <p>Intercept and modify operations before/after they happen:</p>
         <pre><code><span class="code-comment">// Before hook - modify data before write</span>
 db.<span class="code-function">before</span>(<span class="code-string">'set'</span>, <span class="code-string">'users.*'</span>, (ctx) => {
@@ -768,11 +811,11 @@ bun add jsondb-high</code></pre>
           Create a file named <code>app.ts</code> and add the following code to
           initialize your database:
         </p>
-        <pre><code>import JSONDatabase from 'jsondb-high';
+        <pre><code><span class="code-keyword"></span>import</span> <span class="code-variable">JSONDatabase</span> <span class="code-keyword">from</span> <span class="code-string">'jsondb-high'</span>;
 
-// This creates a file named 'tasks.json' in your folder if it doesn't exist
-const db = new JSONDatabase('tasks.json', {
-    wal: true // We use WAL mode to make sure our tasks are never lost
+<span class="code-comment">// This creates a file named 'tasks.json' in your folder if it doesn't exist</span>
+<span class="code-keyword">const</span> <span class="code-variable">db</span> = <span class="code-keyword">new</span> <span class="code-function">JSONDatabase</span>(<span class="code-string">'tasks.json'</span>, {
+    <span class="code-property">wal</span>: <span class="code-boolean">true</span> <span class="code-comment">// We use WAL mode to make sure our tasks are never lost</span>
 });</code></pre>
 
         <h3>3. Adding Tasks</h3>
@@ -780,59 +823,59 @@ const db = new JSONDatabase('tasks.json', {
           To add a task, we use the <code>set</code> method. We'll store each
           task under a 'tasks' category with a unique ID.
         </p>
-        <pre><code>async function addTask(id: string, title: string) {
-    await db.set(`tasks.${id}`, {
-        title: title,
-        completed: false,
-        createdAt: Date.now()
+        <pre><code><span class="code-keyword">async function</span> <span class="code-function">addTask</span>(id: <span class="code-variable">string</span>, title: <span class="code-variable">string</span>) {
+    <span class="code-keyword">await</span> <span class="code-variable">db</span>.<span class="code-function">set</span>(<span class="code-string">`tasks.</span>${id}<span class="code-string">`</span>, {
+        <span class="code-property">title</span>: title,
+        <span class="code-property">completed</span>: <span class="code-boolean">false</span>,
+        <span class="code-property">createdAt</span>: Date.<span class="code-function">now</span>()
     });
-    console.log(`Task "${title}" added!`);
+    console.<span class="code-function">log</span>(<span class="code-string">`Task "</span>${title}<span class="code-string">" added!`</span>);
 }
 
-// Let's add some tasks
-await addTask('1', 'Buy milk');
-await addTask('2', 'Learn Rust');</code></pre>
+<span class="code-comment">// Let's add some tasks</span>
+<span class="code-keyword">await</span> <span class="code-function">addTask</span>(<span class="code-string">'1'</span>, <span class="code-string">'Buy milk'</span>);
+<span class="code-keyword">await</span> <span class="code-function">addTask</span>(<span class="code-string">'2'</span>, <span class="code-string">'Learn Rust'</span>);</code></pre>
 
         <h3>4. Reading and Listing Tasks</h3>
         <p>
           To see your tasks, you can fetch all values from the 'tasks' path.
         </p>
-        <pre><code>async function listTasks() {
-    const tasks = await db.values('tasks');
-    console.log('--- My To-Do List ---');
-    tasks.forEach((task: any, index: number) => {
-        const status = task.completed ? '[X]' : '[ ]';
-        console.log(`${index + 1}. ${status} ${task.title}`);
+        <pre><code><span class="code-keyword">async function</span> <span class="code-function">listTasks</span>() {
+    <span class="code-keyword">const</span> <span class="code-variable">tasks</span> = <span class="code-keyword">await</span> <span class="code-variable">db</span>.<span class="code-function">values</span>(<span class="code-string">'tasks'</span>);
+    console.<span class="code-function">log</span>(<span class="code-string">'--- My To-Do List ---'</span>);
+    <span class="code-variable">tasks</span>.<span class="code-function">forEach</span>((task: <span class="code-variable">any</span>, index: <span class="code-variable">number</span>) => {
+        <span class="code-keyword">const</span> <span class="code-variable">status</span> = task.completed ? <span class="code-string">'[X]'</span> : <span class="code-string">'[ ]'</span>;
+        console.<span class="code-function">log</span>(<span class="code-string">`</span>${index + 1}<span class="code-string">. </span>${status}<span class="code-string"> </span>${task.title}<span class="code-string">`</span>);
     });
 }
 
-await listTasks();</code></pre>
+<span class="code-keyword">await</span> <span class="code-function">listTasks</span>();</code></pre>
 
         <h3>5. Marking a Task as Completed</h3>
         <p>
           You can update a specific part of a task without affecting the rest.
         </p>
-        <pre><code>async function completeTask(id: string) {
-    // Check if the task exists first
-    if (await db.has(`tasks.${id}`)) {
-        await db.set(`tasks.${id}.completed`, true);
-        console.log(`Task ${id} completed!`);
+        <pre><code><span class="code-keyword">async function</span> <span class="code-function">completeTask</span>(id: <span class="code-variable">string</span>) {
+    <span class="code-comment">// Check if the task exists first</span>
+    <span class="code-keyword">if</span> (<span class="code-keyword">await</span> <span class="code-variable">db</span>.<span class="code-function">has</span>(<span class="code-string">`tasks.</span>${id}<span class="code-string">`</span>)) {
+        <span class="code-keyword">await</span> <span class="code-variable">db</span>.<span class="code-function">set</span>(<span class="code-string">`tasks.</span>${id}<span class="code-string">.completed`</span>, <span class="code-boolean">true</span>);
+        console.<span class="code-function">log</span>(<span class="code-string">`Task </span>${id}<span class="code-string"> completed!`</span>);
     }
 }
 
-await completeTask('1');
-await listTasks();</code></pre>
+<span class="code-keyword">await</span> <span class="code-function">completeTask</span>(<span class="code-string">'1'</span>);
+<span class="code-keyword">await</span> <span class="code-function">listTasks</span>();</code></pre>
 
         <h3>6. Finding Specific Tasks</h3>
         <p>Want to find all tasks that AREN'T finished? Use the Query API.</p>
-        <pre><code>async function showPendingTasks() {
-    const pending = await db.query('tasks')
-        .where('completed').eq(false)
-        .exec();
-    console.log('Pending Tasks:', pending);
+        <pre><code><span class="code-keyword">async function</span> <span class="code-function">showPendingTasks</span>() {
+    <span class="code-keyword">const</span> <span class="code-variable">pending</span> = <span class="code-keyword">await</span> <span class="code-variable">db</span>.<span class="code-function">query</span>(<span class="code-string">'tasks'</span>)
+        .<span class="code-function">where</span>(<span class="code-string">'completed'</span>).<span class="code-function">eq</span>(<span class="code-boolean">false</span>)
+        .<span class="code-function">exec</span>();
+    console.<span class="code-function">log</span>(<span class="code-string">'Pending Tasks:'</span>, pending);
 }
 
-await showPendingTasks();</code></pre>
+<span class="code-keyword">await</span> <span class="code-function">showPendingTasks</span>();</code></pre>
 
         <div class="info-box tip">
           <div class="info-box-title">🏆 Challenge</div>
