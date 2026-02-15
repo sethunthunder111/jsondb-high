@@ -1163,8 +1163,11 @@ impl NativeDB {
 
     #[napi]
     pub fn register_schema(&self, path: String, schema_json: String) -> Result<()> {
-        let schema: Schema = serde_json::from_str(&schema_json)
+        let mut schema: Schema = serde_json::from_str(&schema_json)
             .map_err(|e| Error::from_reason(format!("Invalid schema JSON: {}", e)))?;
+
+        schema.compile().map_err(|e| Error::from_reason(format!("Invalid regex in schema: {}", e)))?;
+
         let mut schemas = self.schemas.write();
         schemas.insert(path, schema);
         Ok(())
