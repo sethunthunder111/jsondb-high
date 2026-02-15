@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter};
 use std::path::Path;
@@ -69,8 +69,8 @@ struct BTreeIndexFile {
 pub struct BTreeIndex {
     name: String,
     field: String,
-    // Key -> List of Doc Paths
-    map: BTreeMap<IndexKey, Vec<String>>,
+    // Key (as string representation) -> List of Doc Paths
+    map: BTreeMap<String, BTreeSet<String>>,
     // Doc Path -> Key (for O(1) updates/removals)
     reverse_map: BTreeMap<String, IndexKey>,
     path: String,
@@ -168,9 +168,7 @@ impl BTreeIndex {
             }
             // Remove from old key
             if let Some(list) = self.map.get_mut(old_key) {
-                if let Some(pos) = list.iter().position(|x| x == &doc_path) {
-                    list.remove(pos);
-                }
+                list.remove(&doc_path);
             }
             // Cleanup empty
             if let Some(list) = self.map.get(old_key) {
@@ -182,7 +180,7 @@ impl BTreeIndex {
         }
         
         self.reverse_map.insert(doc_path.clone(), new_key.clone());
-        self.map.entry(new_key).or_default().push(doc_path);
+        self.map.entry(new_key).or_default().insert(doc_path);
         self.dirty = true;
     }
 
@@ -190,8 +188,7 @@ impl BTreeIndex {
     pub fn remove(&mut self, _key: &Value, doc_path: &str) {
         if let Some(old_key) = self.reverse_map.remove(doc_path) {
             if let Some(list) = self.map.get_mut(&old_key) {
-                 if let Some(pos) = list.iter().position(|x| x == doc_path) {
-                    list.remove(pos);
+                 if list.remove(doc_path) {
                     self.dirty = true;
                 }
             }
