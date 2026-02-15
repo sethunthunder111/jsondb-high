@@ -89,6 +89,24 @@ static THREAD_CONFIG: once_cell::sync::Lazy<ThreadPoolConfig> =
     once_cell::sync::Lazy::new(ThreadPoolConfig::new);
 
 // ============================================
+// OPTIMIZATIONS
+// ============================================
+
+struct PathSegment<'a> {
+    raw: &'a str,
+    index: Option<usize>,
+}
+
+fn parse_path(path: &str) -> Vec<PathSegment> {
+    path.split('.')
+        .map(|part| PathSegment {
+            raw: part,
+            index: part.parse::<usize>().ok(),
+        })
+        .collect()
+}
+
+// ============================================
 // DATA STRUCTURES
 // ============================================
 
@@ -906,12 +924,16 @@ impl NativeDB {
         let left_items = get_items(&left_path).ok_or_else(|| Error::from_reason(format!("Left collection not found: {}", left_path)))?;
         let right_items = get_items(&right_path).ok_or_else(|| Error::from_reason(format!("Right collection not found: {}", right_path)))?;
 
+        // Parse fields
+        let left_segments = parse_path(&left_field);
+        let right_segments = parse_path(&right_field);
+
         // Build hash table on right collection
         use std::collections::HashMap;
         let mut hash_table: HashMap<String, Vec<&Value>> = HashMap::new();
         
         for item in &right_items {
-             if let Some(val) = self.get_value_at_field(item, &right_field) {
+             if let Some(val) = self.get_value_at_path_segments(item, &right_segments) {
                  let key = match val {
                      Value::String(s) => s.clone(),
                      _ => val.to_string(),
@@ -924,12 +946,12 @@ impl NativeDB {
         let results: Vec<Value> = if THREAD_CONFIG.should_parallelize(left_items.len()) {
             left_items
                 .par_iter()
-                .map(|left_item| self.join_item(left_item, &left_field, &as_field, &hash_table))
+                .map(|left_item| self.join_item(left_item, &left_segments, &as_field, &hash_table))
                 .collect()
         } else {
             left_items
                 .iter()
-                .map(|left_item| self.join_item(left_item, &left_field, &as_field, &hash_table))
+                .map(|left_item| self.join_item(left_item, &left_segments, &as_field, &hash_table))
                 .collect()
         };
 
@@ -940,28 +962,65 @@ impl NativeDB {
     fn join_item(
         &self,
         left_item: &Value,
-        left_field: &str,
+        left_segments: &[PathSegment],
         as_field: &str,
         hash_table: &HashMap<String, Vec<&Value>>,
     ) -> Value {
+        // Calculate matches first (read-only)
+        let matches_curr = if let Some(val) = self.get_value_at_path_segments(left_item, left_segments) {
+            let matches = match val {
+                Value::String(s) => hash_table.get(s),
+                _ => {
+                    let key = val.to_string();
+                    hash_table.get(&key)
+                }
+            };
+
+            if let Some(m_list) = matches {
+                m_list.iter().map(|m| (*m).clone()).collect()
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+
+        // Clone and modify
         let mut joined = left_item.clone();
         if let Value::Object(ref mut map) = joined {
-            let mut matches_curr = Vec::new();
-            if let Some(val) = self.get_value_at_field(left_item, left_field) {
-                let key = match val {
-                    Value::String(s) => s.clone(),
-                    _ => val.to_string(),
-                };
-
-                if let Some(matches) = hash_table.get(&key) {
-                    for m in matches {
-                        matches_curr.push((*m).clone());
-                    }
-                }
-            }
             map.insert(as_field.to_string(), Value::Array(matches_curr));
         }
         joined
+    }
+
+    /// Helper to get arbitrary field value (supports dot notation)
+    fn get_value_at_path_segments<'a>(&self, item: &'a Value, segments: &[PathSegment]) -> Option<&'a Value> {
+        let mut current = item;
+
+        for segment in segments {
+            match current {
+                Value::Object(map) => {
+                    if let Some(v) = map.get(segment.raw) {
+                        current = v;
+                    } else {
+                        return None;
+                    }
+                }
+                Value::Array(arr) => {
+                    if let Some(idx) = segment.index {
+                         if let Some(v) = arr.get(idx) {
+                            current = v;
+                         } else {
+                             return None;
+                         }
+                    } else {
+                        return None;
+                    }
+                }
+                _ => return None,
+            }
+        }
+        Some(current)
     }
 
     /// Helper to get arbitrary field value (supports dot notation)
