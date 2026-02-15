@@ -4,23 +4,33 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Documentation — jsondb-high</title>
-  <meta name="description" content="Complete documentation for jsondb-high. Learn how to use the blazing fast JSON database for Node.js.">
+  <meta name="description" content="Complete documentation for jsondb-high. The high-performance, acid-compliant JSON database for Node.js.">
   
   <link rel="stylesheet" href="styles.css">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js"></script>
+  <script src="https://unpkg.com/@studio-freight/lenis@1.0.29/dist/lenis.min.js"></script>
 </head>
 <body>
   <!-- Navigation -->
   <nav class="nav">
     <div class="nav-container">
       <a href="index.html" class="nav-logo">
-        jsondb<span>-high</span>
+        JSONDB<span>-HIGH</span>
       </a>
       <div class="nav-links" id="navLinks">
         <a href="index.html" class="nav-link">Home</a>
-        <a href="docs.html" class="nav-link active">Documentation</a>
+        <a href="docs.html" class="nav-link active">Docs</a>
         <a href="benchmarks.html" class="nav-link">Benchmarks</a>
         <a href="https://github.com/sethunthunder111/jsondb-high" class="nav-link" target="_blank" rel="noopener">GitHub</a>
-        <a href="#getting-started" class="nav-cta">Get Started</a>
+        <a href="docs.html#quick-start" class="nav-cta">Get Started</a>
       </div>
       <button class="nav-toggle" id="navToggle" aria-label="Toggle menu">
         <span></span>
@@ -30,17 +40,18 @@
     </div>
   </nav>
 
-  <!-- Documentation Layout -->
   <div class="docs-layout">
     <!-- Sidebar -->
     <aside class="docs-sidebar">
       <div class="docs-search">
-        <svg class="docs-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"></circle>
-          <path d="m21 21-4.35-4.35"></path>
-        </svg>
-        <input type="text" id="searchInput" placeholder="Search docs... (Cmd+K)">
-        <div class="search-results" id="searchResults"></div>
+        <input type="text" id="searchInput" placeholder="SEARCH DOCS... (CMD+K)">
+        <div class="docs-search-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.35-4.35"></path>
+          </svg>
+        </div>
+        <div class="search-results" id="searchResults" style="display:none; position: absolute; top: 100%; left: 0; right: 0; background: var(--bg-tertiary); border: 1px solid var(--acid-green); z-index: 10; padding: 10px; max-height: 300px; overflow-y: auto;"></div>
       </div>
       
       <nav class="docs-nav">
@@ -101,61 +112,50 @@
 
     <!-- Main Content -->
     <main class="docs-content">
-      <h1 id="introduction">Documentation</h1>
-      <p>Complete guide to using jsondb-high, the blazing fast JSON database for Node.js with a Rust-powered core via N-API.</p>
+      <h1 class="hero-title text-outlined-white" style="font-size: 4rem; margin-bottom: 2rem;">DOCUMENTATION</h1>
       
-      <h2 id="getting-started">Getting Started</h2>
-      
-      <h3 id="introduction">Introduction</h3>
-      <p>jsondb-high is a blazing fast, feature-rich JSON database for Node.js with a Rust-powered core via N-API. It offers zero dependencies, ACID durability, and multi-core parallelism for production workloads.</p>
-      
-      <h3 id="features">Features</h3>
-      <ul>
-        <li><strong>⚡ Blazing Fast</strong>: Core logic in Rust via N-API (~2M ops/s reads, ~260k ops/s writes)</li>
-        <li><strong>🔒 Multi-Process Safe</strong>: OS-level advisory file locking prevents data corruption across multiple processes</li>
-        <li><strong>🧵 Multi-Core Processing</strong>: Adaptive parallelism using Rayon - automatically scales with your CPU</li>
-        <li><strong>🛡️ Atomic Operations</strong>: Group Commit Write-Ahead Logging (WAL) ensures ACID durability with near-zero overhead</li>
-        <li><strong>🔍 O(1) Indexing</strong>: In-memory Map indices for instant, constant-time lookups</li>
-        <li><strong>🔒 Encryption</strong>: AES-256-GCM encryption for data at rest</li>
-        <li><strong>📦 Zero Dependencies</strong>: Self-contained native binary; no external database servers required</li>
-        <li><strong>🔄 Middleware</strong>: Support for before and after hooks on all operations</li>
-        <li><strong>⏱️ TTL Support</strong>: Auto-expire keys after a specified time (like Redis)</li>
-        <li><strong>📡 Pub/Sub</strong>: EventEmitter-style subscriptions to data changes</li>
-        <li><strong>📊 Aggregations</strong>: Built-in sum, avg, min, max, groupBy, distinct</li>
-      </ul>
-      
-      <h3 id="installation">Installation</h3>
-      <div class="code-block">
-        <div class="code-header">
-          <div class="code-dot red"></div>
-          <div class="code-dot yellow"></div>
-          <div class="code-dot green"></div>
+      <section id="introduction" class="animate-fade-up">
+        <p class="hero-subtitle">Complete guide to using <span style="color: var(--acid-green)">jsondb-high</span>, the high-performance JSON database for Node.js with a Rust-powered core via N-API.</p>
+
+        <div class="alert alert-info">
+          <strong>New in v4.5:</strong> Hybrid Architecture with configurable durability and locking modes.
         </div>
-        <div class="code-content">
-          <pre><code><span class="token-comment"># Using bun (recommended)</span>
+      </section>
+
+      <h2 id="features" class="section-header">Features</h2>
+      <ul style="list-style: none; padding: 0; display: grid; gap: 1rem;">
+        <li style="border-left: 2px solid var(--acid-green); padding-left: 1rem;"><strong>⚡ Blazing Fast</strong>: Core logic in Rust via N-API (~2M ops/s reads, ~260k ops/s writes)</li>
+        <li style="border-left: 2px solid var(--acid-green); padding-left: 1rem;"><strong>🔒 Multi-Process Safe</strong>: OS-level advisory file locking prevents data corruption</li>
+        <li style="border-left: 2px solid var(--acid-green); padding-left: 1rem;"><strong>🧵 Multi-Core Processing</strong>: Adaptive parallelism using Rayon</li>
+        <li style="border-left: 2px solid var(--acid-green); padding-left: 1rem;"><strong>🛡️ Atomic Operations</strong>: Group Commit Write-Ahead Logging (WAL) for ACID durability</li>
+        <li style="border-left: 2px solid var(--acid-green); padding-left: 1rem;"><strong>🔍 O(1) Indexing</strong>: In-memory Map indices for instant lookups</li>
+        <li style="border-left: 2px solid var(--acid-green); padding-left: 1rem;"><strong>🔒 Encryption</strong>: AES-256-GCM encryption for data at rest</li>
+      </ul>
+
+      <h2 id="installation" class="section-header">Installation</h2>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-comment"># Using bun (recommended)</span>
 bun add jsondb-high
 
 <span class="token-comment"># Using npm</span>
 npm install jsondb-high</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
       </div>
-      
-      <div class="alert alert-info">
-        <strong>Note:</strong> This package builds its native core from source during installation. You must have <a href="https://rustup.rs/" target="_blank">Rust and Cargo</a> installed.
+      <div class="alert">
+        <strong>Note:</strong> This package builds its native core from source. You need Rust and Cargo installed.
       </div>
-      
-      <h3 id="requirements">Requirements</h3>
+
+      <h2 id="requirements" class="section-header">Requirements</h2>
       <ul>
-        <li><strong>Node.js</strong>: >= 16.0.0</li>
-        <li><strong>Rust Toolchain</strong>: <a href="https://rustup.rs/">Installed and in PATH</a> (Required for initial build)</li>
-        <li><strong>C++ Build Tools</strong>: Required by Cargo on some platforms (e.g., Visual Studio Build Tools on Windows)</li>
+        <li>Node.js: >= 16.0.0</li>
+        <li>Rust Toolchain: Installed and in PATH (Required for initial build)</li>
+        <li>C++ Build Tools: Required by Cargo on some platforms</li>
       </ul>
-      
-      <h3 id="quick-start">Quick Start</h3>
+
+      <h2 id="quick-start" class="section-header">Quick Start</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">import</span> <span class="token-function">JSONDatabase</span> <span class="token-keyword">from</span> <span class="token-string">'jsondb-high'</span>;
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">import</span> <span class="token-function">JSONDatabase</span> <span class="token-keyword">from</span> <span class="token-string">'jsondb-high'</span>;
 
 <span class="token-keyword">const</span> db = <span class="token-keyword">new</span> <span class="token-function">JSONDatabase</span>(<span class="token-string">'db.json'</span>);
 
@@ -165,25 +165,19 @@ npm install jsondb-high</code></pre>
 <span class="token-comment">// Read</span>
 <span class="token-keyword">const</span> user = <span class="token-keyword">await</span> db.<span class="token-function">get</span>(<span class="token-string">'user.1'</span>);
 <span class="token-function">console</span>.<span class="token-function">log</span>(user); <span class="token-comment">// { name: 'Alice', role: 'admin' }</span></code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
       </div>
-      
-      <h2 id="hybrid-architecture">Hybrid Architecture (v4.5+)</h2>
+
+      <h2 id="hybrid-architecture" class="section-header">Hybrid Architecture</h2>
       <p>jsondb-high offers multiple storage and safety modes. Choose based on your performance and durability needs.</p>
-      
-      <h2 id="durability">Durability Modes</h2>
-      <p>Configure the Write-Ahead Log (WAL) to balance speed and safety:</p>
-      
+
+      <h2 id="durability" class="section-header">Durability Modes</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> db = <span class="token-keyword">new</span> <span class="token-function">JSONDatabase</span>(<span class="token-string">'db.json'</span>, {
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> db = <span class="token-keyword">new</span> <span class="token-function">JSONDatabase</span>(<span class="token-string">'db.json'</span>, {
   durability: <span class="token-string">'batched'</span>,   <span class="token-comment">// 'none' | 'lazy' | 'batched' | 'sync'</span>
   walFlushMs: <span class="token-number">10</span>,          <span class="token-comment">// Sync every 10ms (Group Commit)</span>
   lockMode: <span class="token-string">'exclusive'</span>
 });</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
       </div>
       
       <div class="table-container">
@@ -194,69 +188,50 @@ npm install jsondb-high</code></pre>
           <tbody>
             <tr><td><code>none</code></td><td>~260k ops/s</td><td>0.003ms</td><td>Manual save only</td></tr>
             <tr><td><code>lazy</code></td><td>~200k ops/s</td><td>0.003ms</td><td>100ms</td></tr>
-            <tr style="background: rgba(16, 185, 129, 0.05);"><td><code>batched</code></td><td><strong>~240k ops/s</strong></td><td>5ms</td><td>10ms (Recommended)</td></tr>
+            <tr><td style="color: var(--acid-green);"><code>batched</code></td><td><strong>~240k ops/s</strong></td><td>5ms</td><td>10ms (Recommended)</td></tr>
             <tr><td><code>sync</code></td><td>~2k ops/s</td><td>0.5ms</td><td>Immediate</td></tr>
           </tbody>
         </table>
       </div>
-      
-      <h2 id="locking">Locking Modes</h2>
+
+      <h2 id="locking" class="section-header">Locking Modes</h2>
       <p>Prevent corruption from multiple processes using the same file:</p>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> db = <span class="token-keyword">new</span> <span class="token-function">JSONDatabase</span>(<span class="token-string">'db.json'</span>, {
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> db = <span class="token-keyword">new</span> <span class="token-function">JSONDatabase</span>(<span class="token-string">'db.json'</span>, {
   lockMode: <span class="token-string">'exclusive'</span> <span class="token-comment">// 'exclusive' | 'shared' | 'none'</span>
 });</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
       </div>
-      
-      <h2 id="indexing">O(1) Indexing</h2>
-      <p>Define indices in the constructor for O(1) read performance:</p>
+
+      <h2 id="indexing" class="section-header">O(1) Indexing</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> db = <span class="token-keyword">new</span> <span class="token-function">JSONDatabase</span>(<span class="token-string">'db.json'</span>, {
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> db = <span class="token-keyword">new</span> <span class="token-function">JSONDatabase</span>(<span class="token-string">'db.json'</span>, {
   indices: [{ name: <span class="token-string">'email'</span>, path: <span class="token-string">'users'</span>, field: <span class="token-string">'email'</span> }]
 });
 
 <span class="token-comment">// Instant Lookup</span>
 <span class="token-keyword">const</span> user = <span class="token-keyword">await</span> db.<span class="token-function">findByIndex</span>(<span class="token-string">'email'</span>, <span class="token-string">'alice@corp.com'</span>);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
       </div>
-      
-      <h2 id="parallel-processing">Multi-Core Parallel Processing</h2>
+
+      <h2 id="parallel-processing" class="section-header">Parallel Processing</h2>
       <p>The database automatically detects available CPU cores and uses parallel processing for large datasets (≥100 items). Falls back to efficient single-threaded operation for small workloads to avoid overhead.</p>
       
-      <h4>System Info</h4>
-      <p>Check system capabilities for parallel processing:</p>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> info = db.<span class="token-function">getSystemInfo</span>();
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> info = db.<span class="token-function">getSystemInfo</span>();
 <span class="token-function">console</span>.<span class="token-function">log</span>(info);
 <span class="token-comment">// {</span>
 <span class="token-comment">//   availableCores: 8,</span>
 <span class="token-comment">//   parallelEnabled: true,</span>
 <span class="token-comment">//   recommendedBatchSize: 1000</span>
 <span class="token-comment">// }</span></code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
       </div>
-      
-      <h4>How It Works</h4>
-      <ul>
-        <li><strong>Adaptive</strong>: Automatically uses 1-N cores based on workload size and system resources</li>
-        <li><strong>Efficient</strong>: Small workloads (&lt;100 items) use single-threaded to avoid parallel overhead</li>
-        <li><strong>Resource-Aware</strong>: Leaves 1 core free for system/main thread</li>
-        <li><strong>Scalable</strong>: Performance scales linearly with available cores for large datasets</li>
-      </ul>
-      
-      <h2 id="dboptions">DBOptions Interface</h2>
-      <p>Configuration options passed to the constructor:</p>
-      
+
+      <h2 id="dboptions" class="section-header">DBOptions Interface</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">interface</span> <span class="token-type">DBOptions</span> {
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">interface</span> <span class="token-type">DBOptions</span> {
   indices?: <span class="token-type">IndexConfig</span>[];           <span class="token-comment">// Array of index configurations</span>
   wal?: <span class="token-type">boolean</span>;                     <span class="token-comment">// Enable Write-Ahead Logging</span>
   encryptionKey?: <span class="token-type">string</span>;            <span class="token-comment">// AES-256-GCM encryption key (32 chars)</span>
@@ -269,829 +244,233 @@ npm install jsondb-high</code></pre>
   schemas?: <span class="token-type">Record</span>&lt;<span class="token-type">string</span>, <span class="token-type">Schema</span>&gt;;  <span class="token-comment">// v5.1: Path-based schemas</span>
   slowQueryThresholdMs?: <span class="token-type">number</span>;     <span class="token-comment">// v5.1: Slow query threshold in ms</span>
 }</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
       </div>
-      
-      <h2 id="basic">Basic Operations</h2>
-      
-      <h4><code>set(path, value)</code></h4>
-      <p>Writes data. Creates nested paths automatically.</p>
+
+      <h2 id="basic" class="section-header">Basic Operations</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">await</span> db.<span class="token-function">set</span>(<span class="token-string">'config.theme'</span>, <span class="token-string">'dark'</span>);
-<span class="token-keyword">await</span> db.<span class="token-function">set</span>(<span class="token-string">'users.1.settings.notifications'</span>, <span class="token-keyword">true</span>);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">await</span> db.<span class="token-function">set</span>(<span class="token-string">'config.theme'</span>, <span class="token-string">'dark'</span>);
+<span class="token-keyword">const</span> val = <span class="token-keyword">await</span> db.<span class="token-function">get</span>(<span class="token-string">'config.theme'</span>, <span class="token-string">'light'</span>);
+<span class="token-keyword">if</span> (<span class="token-keyword">await</span> db.<span class="token-function">has</span>(<span class="token-string">'users.1'</span>)) { ... }
+<span class="token-keyword">await</span> db.<span class="token-function">delete</span>(<span class="token-string">'users.1.settings'</span>);</code></pre>
       </div>
-      
-      <h4><code>get(path, defaultValue?)</code></h4>
-      <p>Retrieves data. Returns <code>defaultValue</code> if path doesn't exist.</p>
+
+      <h2 id="arrays" class="section-header">Array Operations</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> val = <span class="token-keyword">await</span> db.<span class="token-function">get</span>(<span class="token-string">'config.theme'</span>, <span class="token-string">'light'</span>);
-<span class="token-keyword">const</span> user = <span class="token-keyword">await</span> db.<span class="token-function">get</span>(<span class="token-string">'users.1'</span>);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">await</span> db.<span class="token-function">push</span>(<span class="token-string">'users.1.tags'</span>, <span class="token-string">'premium'</span>, <span class="token-string">'beta'</span>);
+<span class="token-keyword">await</span> db.<span class="token-function">pull</span>(<span class="token-string">'users.1.tags'</span>, <span class="token-string">'beta'</span>);</code></pre>
       </div>
-      
-      <h4><code>has(path)</code></h4>
-      <p>Checks if a key exists.</p>
+
+      <h2 id="math" class="section-header">Math Operations</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">if</span> (<span class="token-keyword">await</span> db.<span class="token-function">has</span>(<span class="token-string">'users.1'</span>)) {
-  <span class="token-comment">// User exists</span>
-}</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> newCount = <span class="token-keyword">await</span> db.<span class="token-function">add</span>(<span class="token-string">'users.1.loginCount'</span>, <span class="token-number">1</span>);
+<span class="token-keyword">const</span> newCredits = <span class="token-keyword">await</span> db.<span class="token-function">subtract</span>(<span class="token-string">'users.1.credits'</span>, <span class="token-number">50</span>);</code></pre>
       </div>
-      
-      <h4><code>delete(path)</code></h4>
-      <p>Removes a key or object property.</p>
+
+      <h2 id="query" class="section-header">Query Builder</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">await</span> db.<span class="token-function">delete</span>(<span class="token-string">'users.1.settings'</span>); <span class="token-comment">// Delete nested property</span>
-<span class="token-keyword">await</span> db.<span class="token-function">delete</span>(<span class="token-string">'users.1'</span>);          <span class="token-comment">// Delete entire object</span></code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h2 id="arrays">Array Operations</h2>
-      
-      <h4><code>push(path, ...items)</code></h4>
-      <p>Adds items to an array. Dedupes automatically.</p>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">await</span> db.<span class="token-function">push</span>(<span class="token-string">'users.1.tags'</span>, <span class="token-string">'premium'</span>, <span class="token-string">'beta'</span>);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4><code>pull(path, ...items)</code></h4>
-      <p>Removes items from an array (deep equality).</p>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">await</span> db.<span class="token-function">pull</span>(<span class="token-string">'users.1.tags'</span>, <span class="token-string">'beta'</span>);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h2 id="math">Math Operations (Atomic)</h2>
-      
-      <h4><code>add(path, amount)</code></h4>
-      <p>Atomic increment. Returns new value.</p>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> newCount = <span class="token-keyword">await</span> db.<span class="token-function">add</span>(<span class="token-string">'users.1.loginCount'</span>, <span class="token-number">1</span>);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4><code>subtract(path, amount)</code></h4>
-      <p>Atomic decrement. Returns new value.</p>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> newCredits = <span class="token-keyword">await</span> db.<span class="token-function">subtract</span>(<span class="token-string">'users.1.credits'</span>, <span class="token-number">50</span>);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h2 id="query">Query Builder</h2>
-      <p>Chainable query builder with aggregation support.</p>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> results = <span class="token-keyword">await</span> db.<span class="token-function">query</span>(<span class="token-string">'users'</span>)
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> results = <span class="token-keyword">await</span> db.<span class="token-function">query</span>(<span class="token-string">'users'</span>)
   .<span class="token-function">where</span>(<span class="token-string">'age'</span>).<span class="token-function">gt</span>(<span class="token-number">18</span>)
   .<span class="token-function">where</span>(<span class="token-string">'role'</span>).<span class="token-function">eq</span>(<span class="token-string">'admin'</span>)
   .<span class="token-function">limit</span>(<span class="token-number">10</span>)
-  .<span class="token-function">skip</span>(<span class="token-number">0</span>)
-  .<span class="token-function">sort</span>({ age: <span class="token-number">-1</span> }) <span class="token-comment">// Descending</span>
-  .<span class="token-function">select</span>([<span class="token-string">'id'</span>, <span class="token-string">'name'</span>, <span class="token-string">'email'</span>])
+  .<span class="token-function">sort</span>({ age: <span class="token-number">-1</span> })
+  .<span class="token-function">select</span>([<span class="token-string">'id'</span>, <span class="token-string">'name'</span>])
   .<span class="token-function">exec</span>();</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
       </div>
       
-      <h4>Where Clauses</h4>
-      <div class="table-container">
-        <table>
-          <thead><tr><th>Method</th><th>Description</th></tr></thead>
-          <tbody>
-            <tr><td><code>.eq(value)</code></td><td>Equal</td></tr>
-            <tr><td><code>.ne(value)</code></td><td>Not equal</td></tr>
-            <tr><td><code>.gt(value)</code></td><td>Greater than</td></tr>
-            <tr><td><code>.gte(value)</code></td><td>Greater or equal</td></tr>
-            <tr><td><code>.lt(value)</code></td><td>Less than</td></tr>
-            <tr><td><code>.lte(value)</code></td><td>Less or equal</td></tr>
-            <tr><td><code>.between(min, max)</code></td><td>Between range</td></tr>
-            <tr><td><code>.in([...])</code></td><td>In array</td></tr>
-            <tr><td><code>.notIn([...])</code></td><td>Not in array</td></tr>
-            <tr><td><code>.contains('x')</code></td><td>String contains</td></tr>
-            <tr><td><code>.startsWith('x')</code></td><td>String starts with</td></tr>
-            <tr><td><code>.endsWith('x')</code></td><td>String ends with</td></tr>
-            <tr><td><code>.matches(/^x/)</code></td><td>Regex match</td></tr>
-            <tr><td><code>.exists()</code></td><td>Field exists</td></tr>
-            <tr><td><code>.isNull()</code></td><td>Is null</td></tr>
-            <tr><td><code>.isNotNull()</code></td><td>Is not null</td></tr>
-          </tbody>
-        </table>
-      </div>
-      
-      <h4>Aggregations</h4>
+      <h3>Aggregations</h3>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> count = db.<span class="token-function">query</span>(<span class="token-string">'users'</span>).<span class="token-function">count</span>();
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> count = db.<span class="token-function">query</span>(<span class="token-string">'users'</span>).<span class="token-function">count</span>();
 <span class="token-keyword">const</span> total = db.<span class="token-function">query</span>(<span class="token-string">'orders'</span>).<span class="token-function">sum</span>(<span class="token-string">'amount'</span>);
-<span class="token-keyword">const</span> average = db.<span class="token-function">query</span>(<span class="token-string">'orders'</span>).<span class="token-function">avg</span>(<span class="token-string">'amount'</span>);
-<span class="token-keyword">const</span> min = db.<span class="token-function">query</span>(<span class="token-string">'orders'</span>).<span class="token-function">min</span>(<span class="token-string">'amount'</span>);
-<span class="token-keyword">const</span> max = db.<span class="token-function">query</span>(<span class="token-string">'orders'</span>).<span class="token-function">max</span>(<span class="token-string">'amount'</span>);
-<span class="token-keyword">const</span> unique = db.<span class="token-function">query</span>(<span class="token-string">'users'</span>).<span class="token-function">distinct</span>(<span class="token-string">'role'</span>);
 <span class="token-keyword">const</span> grouped = db.<span class="token-function">query</span>(<span class="token-string">'users'</span>).<span class="token-function">groupBy</span>(<span class="token-string">'department'</span>);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
       </div>
-      
-      <h2 id="find">Find Operations</h2>
-      
-      <h4><code>find(path, predicate)</code></h4>
-      <p>Find a single item matching predicate (function or object matcher).</p>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-comment">// With function predicate</span>
-<span class="token-keyword">const</span> user = <span class="token-keyword">await</span> db.<span class="token-function">find</span>(<span class="token-string">'users'</span>, u => u.age > <span class="token-number">18</span>);
 
-<span class="token-comment">// With object matcher</span>
-<span class="token-keyword">const</span> admin = <span class="token-keyword">await</span> db.<span class="token-function">find</span>(<span class="token-string">'users'</span>, { role: <span class="token-string">'admin'</span> });</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4><code>findAll(path, predicate)</code></h4>
-      <p>Find all items matching predicate.</p>
+      <h2 id="find" class="section-header">Find Operations</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> adults = <span class="token-keyword">await</span> db.<span class="token-function">findAll</span>(<span class="token-string">'users'</span>, u => u.age >= <span class="token-number">18</span>);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> user = <span class="token-keyword">await</span> db.<span class="token-function">find</span>(<span class="token-string">'users'</span>, u => u.age > <span class="token-number">18</span>);
+<span class="token-keyword">const</span> adults = <span class="token-keyword">await</span> db.<span class="token-function">findAll</span>(<span class="token-string">'users'</span>, u => u.age >= <span class="token-number">18</span>);</code></pre>
       </div>
-      
-      <h4><code>findByIndex(indexName, value)</code></h4>
-      <p>O(1) lookup using a registered index.</p>
+
+      <h2 id="pagination" class="section-header">Pagination</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> user = <span class="token-keyword">await</span> db.<span class="token-function">findByIndex</span>(<span class="token-string">'email'</span>, <span class="token-string">'alice@corp.com'</span>);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> page = <span class="token-keyword">await</span> db.<span class="token-function">paginate</span>(<span class="token-string">'users'</span>, <span class="token-number">1</span>, <span class="token-number">20</span>);</code></pre>
       </div>
-      
-      <h2 id="pagination">Pagination</h2>
-      <p>Helper for API endpoints.</p>
+
+      <h2 id="batch" class="section-header">Batch & Parallel</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> page = <span class="token-keyword">await</span> db.<span class="token-function">paginate</span>(<span class="token-string">'users'</span>, <span class="token-number">1</span>, <span class="token-number">20</span>);
-<span class="token-comment">// Returns: { </span>
-<span class="token-comment">//   data: [...], </span>
-<span class="token-comment">//   meta: { total, pages, page, limit, hasNext, hasPrev } </span>
-<span class="token-comment">// }</span></code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h2 id="batch">Batch & Parallel Operations</h2>
-      
-      <h4><code>batch(operations)</code></h4>
-      <p>Execute multiple writes in a single IO tick.</p>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">await</span> db.<span class="token-function">batch</span>([
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">await</span> db.<span class="token-function">batch</span>([
   { type: <span class="token-string">'set'</span>, path: <span class="token-string">'logs.1'</span>, value: <span class="token-string">'log data'</span> },
-  { type: <span class="token-string">'delete'</span>, path: <span class="token-string">'temp.cache'</span> },
-  { type: <span class="token-string">'add'</span>, path: <span class="token-string">'stats.visits'</span>, value: <span class="token-number">1</span> }
-]);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4><code>batchSetParallel(operations)</code></h4>
-      <p>Execute thousands of set operations efficiently using all available cores. Automatically parallelized when ≥100 items.</p>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> operations = [];
-<span class="token-keyword">for</span> (<span class="token-keyword">let</span> i = <span class="token-number">0</span>; i < <span class="token-number">10000</span>; i++) {
-  operations.<span class="token-function">push</span>({
-    path: <span class="token-string">`users.${i}`</span>,
-    value: { id: i, name: <span class="token-string">`User ${i}`</span>, active: <span class="token-keyword">true</span> }
-  });
-}
-
-<span class="token-keyword">const</span> result = <span class="token-keyword">await</span> db.<span class="token-function">batchSetParallel</span>(operations);
-<span class="token-function">console</span>.<span class="token-function">log</span>(<span class="token-string">`Completed ${result.count} operations`</span>);
-<span class="token-comment">// Returns: { success: boolean, count: number, error?: string }</span></code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4><code>parallelQuery(path, filters)</code></h4>
-      <p>High-performance filtering using native Rust parallel iteration.</p>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-comment">// Filter with multiple conditions - uses parallel processing for large collections</span>
-<span class="token-keyword">const</span> activeAdults = <span class="token-keyword">await</span> db.<span class="token-function">parallelQuery</span>(<span class="token-string">'users'</span>, [
-  { field: <span class="token-string">'age'</span>, op: <span class="token-string">'gte'</span>, value: <span class="token-number">18</span> },
-  { field: <span class="token-string">'status'</span>, op: <span class="token-string">'eq'</span>, value: <span class="token-string">'active'</span> }
+  { type: <span class="token-string">'delete'</span>, path: <span class="token-string">'temp.cache'</span> }
 ]);
 
-<span class="token-comment">// Available operators: eq, ne, gt, gte, lt, lte, contains, startswith, endswith, in, notin, regex, containsAll, containsAny</span></code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
+<span class="token-comment">// Parallel (High Performance)</span>
+<span class="token-keyword">await</span> db.<span class="token-function">batchSetParallel</span>(largeArrayOfOperations);</code></pre>
       </div>
-      
-      <h4><code>parallelAggregate(path, operation, field?)</code></h4>
-      <p>Compute aggregations efficiently across large datasets.</p>
+
+      <h2 id="transactions" class="section-header">Transactions</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> count = <span class="token-keyword">await</span> db.<span class="token-function">parallelAggregate</span>(<span class="token-string">'orders'</span>, <span class="token-string">'count'</span>);
-<span class="token-keyword">const</span> totalRevenue = <span class="token-keyword">await</span> db.<span class="token-function">parallelAggregate</span>(<span class="token-string">'orders'</span>, <span class="token-string">'sum'</span>, <span class="token-string">'amount'</span>);
-<span class="token-keyword">const</span> avgOrderValue = <span class="token-keyword">await</span> db.<span class="token-function">parallelAggregate</span>(<span class="token-string">'orders'</span>, <span class="token-string">'avg'</span>, <span class="token-string">'amount'</span>);
-<span class="token-keyword">const</span> minOrder = <span class="token-keyword">await</span> db.<span class="token-function">parallelAggregate</span>(<span class="token-string">'orders'</span>, <span class="token-string">'min'</span>, <span class="token-string">'amount'</span>);
-<span class="token-keyword">const</span> maxOrder = <span class="token-keyword">await</span> db.<span class="token-function">parallelAggregate</span>(<span class="token-string">'orders'</span>, <span class="token-string">'max'</span>, <span class="token-string">'amount'</span>);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h2 id="transactions">Transactions</h2>
-      <p>Atomic read-modify-write with automatic rollback on error.</p>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">await</span> db.<span class="token-function">transaction</span>(<span class="token-keyword">async</span> (data) => {
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">await</span> db.<span class="token-function">transaction</span>(<span class="token-keyword">async</span> (data) => {
   <span class="token-keyword">if</span> (data.bank.balance >= <span class="token-number">100</span>) {
     data.bank.balance -= <span class="token-number">100</span>;
     data.users[<span class="token-string">'1'</span>].wallet += <span class="token-number">100</span>;
   }
   <span class="token-keyword">return</span> data;
 });</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
       </div>
-      
-      <h2 id="snapshots">Snapshots</h2>
-      <p>Create and restore backups.</p>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> backupPath = <span class="token-keyword">await</span> db.<span class="token-function">createSnapshot</span>(<span class="token-string">'daily'</span>);
-<span class="token-function">console</span>.<span class="token-function">log</span>(<span class="token-string">'Backup saved to:'</span>, backupPath);
 
-<span class="token-comment">// Restore later</span>
+      <h2 id="snapshots" class="section-header">Snapshots</h2>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> backupPath = <span class="token-keyword">await</span> db.<span class="token-function">createSnapshot</span>(<span class="token-string">'daily'</span>);
 <span class="token-keyword">await</span> db.<span class="token-function">restoreSnapshot</span>(backupPath);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
       </div>
-      
-      <h2 id="ttl">TTL (Time to Live)</h2>
-      <p>Auto-expire keys like Redis.</p>
-      
-      <h4><code>setWithTTL(path, value, ttlSeconds)</code></h4>
+
+      <h2 id="ttl" class="section-header">TTL (Time to Live)</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-comment">// Set with TTL (expires in 60 seconds)</span>
-<span class="token-keyword">await</span> db.<span class="token-function">setWithTTL</span>(<span class="token-string">'session.abc123'</span>, { userId: <span class="token-number">1</span> }, <span class="token-number">60</span>);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">await</span> db.<span class="token-function">setWithTTL</span>(<span class="token-string">'session.abc'</span>, { id: 1 }, <span class="token-number">60</span>);</code></pre>
       </div>
-      
-      <h4><code>setTTL(path, ttlSeconds)</code></h4>
-      <p>Set TTL on an existing key.</p>
+
+      <h2 id="pubsub" class="section-header">Pub/Sub</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code>db.<span class="token-function">setTTL</span>(<span class="token-string">'temp.data'</span>, <span class="token-number">300</span>);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4><code>getTTL(path)</code></h4>
-      <p>Get remaining TTL in seconds (-1 = no TTL, -2 = key doesn't exist).</p>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> ttl = <span class="token-keyword">await</span> db.<span class="token-function">getTTL</span>(<span class="token-string">'session.abc123'</span>);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4><code>clearTTL(path)</code></h4>
-      <p>Remove TTL from a key (make it persistent).</p>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code>db.<span class="token-function">clearTTL</span>(<span class="token-string">'session.abc123'</span>);</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4><code>hasTTL(path)</code></h4>
-      <p>Check if a key has TTL set.</p>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">if</span> (db.<span class="token-function">hasTTL</span>(<span class="token-string">'session.abc123'</span>)) {
-  <span class="token-comment">// Key has TTL</span>
-}</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4>TTL Events</h4>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-comment">// Listen for expirations</span>
-db.<span class="token-function">on</span>(<span class="token-string">'ttl:expired'</span>, ({ path }) => {
-  <span class="token-function">console</span>.<span class="token-function">log</span>(<span class="token-string">'Key expired:'</span>, path);
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> unsubscribe = db.<span class="token-function">subscribe</span>(<span class="token-string">'users.*'</span>, (newVal) => {
+  <span class="token-function">console</span>.<span class="token-function">log</span>(<span class="token-string">'Changed:'</span>, newVal);
 });</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
       </div>
-      
-      <h2 id="pubsub">Pub/Sub (Subscriptions)</h2>
-      <p>Subscribe to key changes with pattern matching.</p>
+
+      <h2 id="encryption" class="section-header">Encryption</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-comment">// Subscribe to all user changes</span>
-<span class="token-keyword">const</span> unsubscribe = db.<span class="token-function">subscribe</span>(<span class="token-string">'users.*'</span>, (newValue, oldValue) => {
-  <span class="token-function">console</span>.<span class="token-function">log</span>(<span class="token-string">'User changed:'</span>, newValue);
-});
-
-<span class="token-comment">// Subscribe to specific path</span>
-db.<span class="token-function">subscribe</span>(<span class="token-string">'config.theme'</span>, (value) => {
-  <span class="token-function">applyTheme</span>(value);
-});
-
-<span class="token-comment">// Wildcards supported</span>
-db.<span class="token-function">subscribe</span>(<span class="token-string">'**'</span>, (value, old) => {
-  <span class="token-comment">// Called for ALL changes</span>
-});
-
-<span class="token-comment">// Unsubscribe when done</span>
-<span class="token-function">unsubscribe</span>();</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h2 id="encryption">Encryption</h2>
-      <p>AES-256-GCM encryption for data at rest.</p>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">const</span> db = <span class="token-keyword">new</span> <span class="token-function">JSONDatabase</span>(<span class="token-string">'secure.json'</span>, {
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> db = <span class="token-keyword">new</span> <span class="token-function">JSONDatabase</span>(<span class="token-string">'secure.json'</span>, {
   encryptionKey: <span class="token-string">'your-32-character-secret-key!!'</span>
-});
-
-<span class="token-comment">// All data is encrypted before writing to disk</span>
-<span class="token-keyword">await</span> db.<span class="token-function">set</span>(<span class="token-string">'secrets'</span>, { apiKey: <span class="token-string">'xyz123'</span> });</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
+});</code></pre>
       </div>
-      
-      <h2 id="middleware">Middleware</h2>
-      <p>Intercept operations before/after they happen.</p>
+
+      <h2 id="middleware" class="section-header">Middleware</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-comment">// Before hook - modify data before write</span>
-db.<span class="token-function">before</span>(<span class="token-string">'set'</span>, <span class="token-string">'users.*'</span>, (ctx) => {
+        <button class="code-copy">Copy</button>
+        <pre><code>db.<span class="token-function">before</span>(<span class="token-string">'set'</span>, <span class="token-string">'users.*'</span>, (ctx) => {
   ctx.value.updatedAt = Date.<span class="token-function">now</span>();
   <span class="token-keyword">return</span> ctx;
-});
-
-<span class="token-comment">// After hook - react after write</span>
-db.<span class="token-function">after</span>(<span class="token-string">'set'</span>, <span class="token-string">'users.*'</span>, (ctx) => {
-  <span class="token-function">console</span>.<span class="token-function">log</span>(<span class="token-string">'User updated:'</span>, ctx.path);
-  <span class="token-keyword">return</span> ctx;
 });</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
       </div>
-      
-      <h2 id="utility">Utility Methods</h2>
-      
+
+      <h2 id="utility" class="section-header">Utility Methods</h2>
       <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-comment">// Get all keys under a path</span>
-<span class="token-keyword">const</span> keys = <span class="token-keyword">await</span> db.<span class="token-function">keys</span>(<span class="token-string">'users'</span>);
-
-<span class="token-comment">// Get all values under a path</span>
-<span class="token-keyword">const</span> values = <span class="token-keyword">await</span> db.<span class="token-function">values</span>(<span class="token-string">'users'</span>);
-
-<span class="token-comment">// Count items</span>
-<span class="token-keyword">const</span> count = <span class="token-keyword">await</span> db.<span class="token-function">count</span>(<span class="token-string">'users'</span>);
-
-<span class="token-comment">// Clear all data</span>
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">await</span> db.<span class="token-function">keys</span>(<span class="token-string">'users'</span>);
+<span class="token-keyword">await</span> db.<span class="token-function">values</span>(<span class="token-string">'users'</span>);
+<span class="token-keyword">await</span> db.<span class="token-function">count</span>(<span class="token-string">'users'</span>);
 <span class="token-keyword">await</span> db.<span class="token-function">clear</span>();
+<span class="token-keyword">await</span> db.<span class="token-function">stats</span>();
+<span class="token-keyword">await</span> db.<span class="token-function">save</span>(); <span class="token-comment">// Force save</span>
+<span class="token-keyword">await</span> db.<span class="token-function">sync</span>(); <span class="token-comment">// Durability sync</span></code></pre>
+      </div>
+      
+      <h2 id="events" class="section-header">Events</h2>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code>db.<span class="token-function">on</span>(<span class="token-string">'change'</span>, ({ path, value }) => { ... });
+db.<span class="token-function">on</span>(<span class="token-string">'error'</span>, (err) => { ... });</code></pre>
+      </div>
 
-<span class="token-comment">// Get database statistics</span>
-<span class="token-keyword">const</span> stats = <span class="token-keyword">await</span> db.<span class="token-function">stats</span>();
-<span class="token-comment">// { size: 1234, keys: 10, indices: 2, ttlKeys: 5, subscriptions: 3 }</span>
+      <h2 id="types-interfaces" class="section-header">TypeScript Interfaces</h2>
+      <p>Please refer to the source code <code>index.ts</code> or the generated <code>index.d.ts</code> for full type definitions.</p>
 
-<span class="token-comment">// Force save to disk (Durable write)</span>
-<span class="token-keyword">await</span> db.<span class="token-function">save</span>();
-
-<span class="token-comment">// Explicit durability sync (v4.5+)</span>
-<span class="token-keyword">await</span> db.<span class="token-function">sync</span>();
-
-<span class="token-comment">// Check WAL status (v4.5+)</span>
-<span class="token-keyword">const</span> wal = db.<span class="token-function">walStatus</span>();
-<span class="token-comment">// { enabled: true, committedLsn: 12345 }</span>
-
-<span class="token-comment">// Manually trigger index rebuild</span>
-db.<span class="token-function">rebuildIndex</span>();
-
-<span class="token-comment">// Clean shutdown</span>
-<span class="token-keyword">await</span> db.<span class="token-function">close</span>();</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h2 id="events">Events</h2>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code>db.<span class="token-function">on</span>(<span class="token-string">'change'</span>, ({ path, value, oldValue }) => { ... });
-db.<span class="token-function">on</span>(<span class="token-string">'batch'</span>, ({ operations }) => { ... });
-db.<span class="token-function">on</span>(<span class="token-string">'transaction:commit'</span>, () => { ... });
-db.<span class="token-function">on</span>(<span class="token-string">'transaction:rollback'</span>, ({ error }) => { ... });
-db.<span class="token-function">on</span>(<span class="token-string">'snapshot:created'</span>, ({ path, name }) => { ... });
-db.<span class="token-function">on</span>(<span class="token-string">'snapshot:restored'</span>, ({ path }) => { ... });
-db.<span class="token-function">on</span>(<span class="token-string">'ttl:expired'</span>, ({ path }) => { ... });
-db.<span class="token-function">on</span>(<span class="token-string">'error'</span>, (error) => { ... });</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h2 id="types-interfaces">TypeScript Interfaces</h2>
-      
-      <h4>IndexConfig</h4>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">interface</span> <span class="token-type">IndexConfig</span> {
-  name: <span class="token-type">string</span>;    <span class="token-comment">// Index name</span>
-  path: <span class="token-type">string</span>;    <span class="token-comment">// Path to collection</span>
-  field: <span class="token-type">string</span>;   <span class="token-comment">// Field to index</span>
-}</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4>QueryFilter</h4>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">interface</span> <span class="token-type">QueryFilter</span> {
-  field: <span class="token-type">string</span>;
-  op: <span class="token-string">'eq'</span> | <span class="token-string">'ne'</span> | <span class="token-string">'gt'</span> | <span class="token-string">'gte'</span> | <span class="token-string">'lt'</span> | <span class="token-string">'lte'</span> | 
-        <span class="token-string">'contains'</span> | <span class="token-string">'startswith'</span> | <span class="token-string">'endswith'</span> | 
-        <span class="token-string">'in'</span> | <span class="token-string">'notin'</span> | <span class="token-string">'regex'</span> | <span class="token-string">'containsAll'</span> | <span class="token-string">'containsAny'</span>;
-  value: <span class="token-type">any</span>;
-}</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4>BatchOperation</h4>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">interface</span> <span class="token-type">BatchOperation</span> {
-  type: <span class="token-string">'set'</span> | <span class="token-string">'delete'</span> | <span class="token-string">'push'</span> | <span class="token-string">'add'</span> | <span class="token-string">'subtract'</span>;
-  path: <span class="token-type">string</span>;
-  value?: <span class="token-type">unknown</span>;
-}</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4>ParallelResult</h4>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">interface</span> <span class="token-type">ParallelResult</span> {
-  success: <span class="token-type">boolean</span>;
-  count: <span class="token-type">number</span>;
-  error?: <span class="token-type">string</span>;
-}</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4>SystemInfo</h4>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">interface</span> <span class="token-type">SystemInfo</span> {
-  availableCores: <span class="token-type">number</span>;
-  parallelEnabled: <span class="token-type">boolean</span>;
-  recommendedBatchSize: <span class="token-type">number</span>;
-}</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4>PaginationResult & PaginationMeta</h4>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">interface</span> <span class="token-type">PaginationMeta</span> {
-  total: <span class="token-type">number</span>;
-  pages: <span class="token-type">number</span>;
-  page: <span class="token-type">number</span>;
-  limit: <span class="token-type">number</span>;
-  hasNext: <span class="token-type">boolean</span>;
-  hasPrev: <span class="token-type">boolean</span>;
-}
-
-<span class="token-keyword">interface</span> <span class="token-type">PaginationResult</span>&lt;T&gt; {
-  data: T[];
-  meta: <span class="token-type">PaginationMeta</span>;
-}</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4>MiddlewareContext & MiddlewareFn</h4>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">interface</span> <span class="token-type">MiddlewareContext</span>&lt;T = <span class="token-type">unknown</span>&gt; {
-  path: <span class="token-type">string</span>;
-  value: T;
-  operation: <span class="token-type">string</span>;
-  timestamp: <span class="token-type">number</span>;
-}
-
-<span class="token-keyword">type</span> <span class="token-type">MiddlewareFn</span>&lt;T = <span class="token-type">unknown</span>&gt; = 
-  (ctx: <span class="token-type">MiddlewareContext</span>&lt;T&gt;) => <span class="token-type">MiddlewareContext</span>&lt;T&gt; | <span class="token-keyword">void</span>;</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4>TTLEntry</h4>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">interface</span> <span class="token-type">TTLEntry</span> {
-  path: <span class="token-type">string</span>;
-  expiresAt: <span class="token-type">number</span>;
-}</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h2 id="types-schemas">Schema Types</h2>
-      
-      <h4>SchemaType</h4>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">type</span> <span class="token-type">SchemaType</span> = <span class="token-string">'object'</span> | <span class="token-string">'array'</span> | <span class="token-string">'string'</span> | <span class="token-string">'number'</span> | <span class="token-string">'boolean'</span> | <span class="token-string">'null'</span>;</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4>Schema</h4>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">interface</span> <span class="token-type">Schema</span> {
-  type: <span class="token-type">SchemaType</span>;
-  properties?: <span class="token-type">Record</span>&lt;<span class="token-type">string</span>, <span class="token-type">Schema</span>&gt;;
-  required?: <span class="token-type">string</span>[];
-  minLength?: <span class="token-type">number</span>;
-  maxLength?: <span class="token-type">number</span>;
-  pattern?: <span class="token-type">string</span>;
-  minimum?: <span class="token-type">number</span>;
-  maximum?: <span class="token-type">number</span>;
-  exclusiveMinimum?: <span class="token-type">number</span>;
-  exclusiveMaximum?: <span class="token-type">number</span>;
-  items?: <span class="token-type">Schema</span>;
-  minItems?: <span class="token-type">number</span>;
-  maxItems?: <span class="token-type">number</span>;
-  uniqueItems?: <span class="token-type">boolean</span>;
-  enum?: <span class="token-type">unknown</span>[];
-}</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h2 id="types-query">Query Types</h2>
-      
-      <h4>SortDirection & SortOptions</h4>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">type</span> <span class="token-type">SortDirection</span> = <span class="token-number">1</span> | <span class="token-number">-1</span>;
-
-<span class="token-keyword">interface</span> <span class="token-type">SortOptions</span> {
-  [key: <span class="token-type">string</span>]: <span class="token-type">SortDirection</span>;
-}</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4>ParallelConfig</h4>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">interface</span> <span class="token-type">ParallelConfig</span> {
-  enabled?: <span class="token-type">boolean</span>;      <span class="token-comment">// Enable parallel processing (auto-detected by default)</span>
-  threshold?: <span class="token-type">number</span>;     <span class="token-comment">// Minimum items before using parallel (default: 100)</span>
-  maxThreads?: <span class="token-type">number</span>;    <span class="token-comment">// Maximum threads (default: auto-detected cores - 1)</span>
-}</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h4>JoinConfig</h4>
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">interface</span> <span class="token-type">JoinConfig</span> {
-  from: <span class="token-type">string</span>;        <span class="token-comment">// Source collection path</span>
-  to: <span class="token-type">string</span>;          <span class="token-comment">// Target collection path</span>
-  localField: <span class="token-type">string</span>;  <span class="token-comment">// Field in source collection</span>
-  foreignField: <span class="token-type">string</span>;<span class="token-comment">// Field in target collection</span>
-  as: <span class="token-type">string</span>;          <span class="token-comment">// Output field name</span>
-}</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
-      <h2 id="native-db">NativeDb Class (Low-level)</h2>
-      <p>The underlying Rust-powered native database class:</p>
-      
-      <div class="code-block">
-        <div class="code-content">
-          <pre><code><span class="token-keyword">class</span> <span class="token-type">NativeDb</span> {
-  <span class="token-function">constructor</span>(path: <span class="token-type">string</span>, wal: <span class="token-type">boolean</span>);
-  
-  <span class="token-comment">// v4.5: Create database with full options</span>
-  <span class="token-keyword">static</span> <span class="token-function">newWithOptions</span>(
-    path: <span class="token-type">string</span>,
-    lockMode: <span class="token-type">string</span>,
-    durability: <span class="token-type">string</span>,
-    walBatchSize?: <span class="token-type">number</span>,
-    walFlushMs?: <span class="token-type">number</span>
-  ): <span class="token-type">NativeDb</span>;
-  
-  <span class="token-comment">// Core operations</span>
-  <span class="token-function">load</span>(): <span class="token-keyword">void</span>;
-  <span class="token-function">save</span>(): <span class="token-keyword">void</span>;
-  <span class="token-function">sync</span>(): <span class="token-keyword">void</span>;           <span class="token-comment">// v4.5: Explicit sync for durability</span>
-  <span class="token-function">walStatus</span>(): <span class="token-type">any</span>;        <span class="token-comment">// v4.5: Get WAL status</span>
-  
-  <span class="token-comment">// Data operations</span>
-  <span class="token-function">get</span>(path: <span class="token-type">string</span>): <span class="token-type">any</span>;
-  <span class="token-function">set</span>(path: <span class="token-type">string</span>, value: <span class="token-type">any</span>): <span class="token-keyword">void</span>;
-  <span class="token-function">has</span>(path: <span class="token-type">string</span>): <span class="token-type">boolean</span>;
-  <span class="token-function">delete</span>(path: <span class="token-type">string</span>): <span class="token-keyword">void</span>;
-  <span class="token-function">push</span>(path: <span class="token-type">string</span>, value: <span class="token-type">any</span>): <span class="token-keyword">void</span>;
-  
-  <span class="token-comment">// Parallel operations</span>
-  <span class="token-function">batchSetParallel</span>(operations: <span class="token-type">Array</span>&lt;[<span class="token-type">string</span>, <span class="token-type">any</span>]&gt;): <span class="token-type">ParallelResult</span>;
-  <span class="token-function">parallelQuery</span>(path: <span class="token-type">string</span>, filters: <span class="token-type">QueryFilter</span>[]): <span class="token-type">any</span>;
-  <span class="token-function">parallelAggregate</span>(path: <span class="token-type">string</span>, operation: <span class="token-type">string</span>, field?: <span class="token-type">string</span> | <span class="token-keyword">null</span>): <span class="token-type">any</span>;
-  <span class="token-function">parallelLookup</span>(leftPath: <span class="token-type">string</span>, rightPath: <span class="token-type">string</span>, 
-    leftField: <span class="token-type">string</span>, rightField: <span class="token-type">string</span>, asField: <span class="token-type">string</span>): <span class="token-type">any</span>;
-  
-  <span class="token-comment">// Index operations</span>
-  <span class="token-function">registerIndex</span>(name: <span class="token-type">string</span>, field: <span class="token-type">string</span>): <span class="token-keyword">void</span>;
-  <span class="token-function">updateIndex</span>(name: <span class="token-type">string</span>, key: <span class="token-type">any</span>, path: <span class="token-type">string</span>, isDelete: <span class="token-type">boolean</span>): <span class="token-keyword">void</span>;
-  <span class="token-function">findIndexPaths</span>(name: <span class="token-type">string</span>, key: <span class="token-type">any</span>): <span class="token-type">string</span>[];
-  <span class="token-function">clearIndex</span>(name: <span class="token-type">string</span>): <span class="token-keyword">void</span>;
-  
-  <span class="token-comment">// Schema operations</span>
-  <span class="token-function">registerSchema</span>(path: <span class="token-type">string</span>, schemaJson: <span class="token-type">string</span>): <span class="token-keyword">void</span>;
-  <span class="token-function">validatePath</span>(path: <span class="token-type">string</span>, value: <span class="token-type">any</span>): <span class="token-keyword">void</span>;
-  
-  <span class="token-comment">// Transactions</span>
-  <span class="token-function">begin_transaction</span>(): <span class="token-keyword">void</span>;
-  <span class="token-function">commit_transaction</span>(): <span class="token-keyword">void</span>;
-  <span class="token-function">rollback_transaction</span>(): <span class="token-keyword">void</span>;
-  <span class="token-function">create_savepoint</span>(name: <span class="token-type">string</span>): <span class="token-keyword">void</span>;
-  <span class="token-function">rollback_to_savepoint</span>(name: <span class="token-type">string</span>): <span class="token-keyword">void</span>;
-  
-  <span class="token-comment">// System info</span>
-  <span class="token-function">getSystemInfo</span>(): <span class="token-type">SystemInfo</span>;
-}</code></pre>
-        </div>
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-      </div>
-      
     </main>
   </div>
 
   <!-- Footer -->
   <footer class="footer">
-    <div class="footer-container">
-      <div class="footer-grid">
-        <div class="footer-brand">
-          <div class="footer-logo">jsondb<span>-high</span></div>
-          <p class="footer-description">A blazing fast, feature-rich JSON database for Node.js.</p>
-        </div>
-        <div class="footer-column">
-          <h4>Product</h4>
-          <ul class="footer-links">
-            <li class="footer-link"><a href="docs.html">Documentation</a></li>
-            <li class="footer-link"><a href="benchmarks.html">Benchmarks</a></li>
-          </ul>
-        </div>
-        <div class="footer-column">
-          <h4>Resources</h4>
-          <ul class="footer-links">
-            <li class="footer-link"><a href="https://github.com/sethunthunder111/jsondb-high" target="_blank">GitHub</a></li>
-            <li class="footer-link"><a href="https://www.npmjs.com/package/jsondb-high" target="_blank">npm</a></li>
-          </ul>
-        </div>
-        <div class="footer-column">
-          <h4>Legal</h4>
-          <ul class="footer-links">
-            <li class="footer-link"><a href="LICENSE">MIT License</a></li>
-          </ul>
-        </div>
+    <div class="footer-grid">
+      <div>
+        <div class="footer-logo">JSONDB<span>-HIGH</span></div>
+        <p class="footer-description">A blazing fast, feature-rich JSON database for Node.js.</p>
       </div>
-      <div class="footer-bottom">
-        <p class="footer-copyright">&copy; 2026 jsondb-high. Open source under MIT License.</p>
+      <div>
+        <h4>Product</h4>
+        <ul>
+          <li><a href="docs.html">Documentation</a></li>
+          <li><a href="benchmarks.html">Benchmarks</a></li>
+        </ul>
       </div>
+      <div>
+        <h4>Resources</h4>
+        <ul>
+          <li><a href="https://github.com/sethunthunder111/jsondb-high" target="_blank">GitHub</a></li>
+          <li><a href="https://www.npmjs.com/package/jsondb-high" target="_blank">NPM</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="LICENSE">MIT License</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      &copy; 2026 jsondb-high. Open source under MIT License.
     </div>
   </footer>
 
+  <script src="main.js"></script>
+
   <script>
-    // Mobile nav
-    document.getElementById('navToggle').addEventListener('click', () => {
-      document.getElementById('navLinks').classList.toggle('active');
-    });
-    
-    // Copy code
-    function copyCode(button) {
-      const code = button.closest('.code-block').querySelector('code').innerText;
-      navigator.clipboard.writeText(code).then(() => {
-        button.textContent = 'Copied!';
-        button.classList.add('copied');
-        setTimeout(() => {
-          button.textContent = 'Copy';
-          button.classList.remove('copied');
-        }, 2000);
-      });
-    }
-    
-    // Active nav link on scroll
-    const sections = document.querySelectorAll('.docs-content h2[id], .docs-content h3[id], .docs-content h4[id]');
-    const navLinks = document.querySelectorAll('.docs-nav-link');
-    
-    function updateActiveNav() {
-      let current = '';
-      sections.forEach(section => {
-        const sectionTop = section.offsetTop;
-        if (pageYOffset >= sectionTop - 200) {
-          current = section.getAttribute('id');
-        }
-      });
-      
-      navLinks.forEach(link => {
-        link.classList.remove('active');
-        if (link.getAttribute('href') === '#' + current) {
-          link.classList.add('active');
-        }
-      });
-    }
-    
-    window.addEventListener('scroll', updateActiveNav);
-    updateActiveNav();
-    
-    // Search
+    // Simple Search Logic
     const searchInput = document.getElementById('searchInput');
     const searchResults = document.getElementById('searchResults');
     
-    const searchIndex = [];
-    document.querySelectorAll('.docs-content h2, .docs-content h3, .docs-content h4, .docs-content p').forEach(el => {
-      if (el.id || el.closest('[id]')) {
-        searchIndex.push({
-          text: el.textContent.toLowerCase(),
-          title: el.textContent.substring(0, 60),
-          id: el.id || el.closest('[id]').id
-        });
-      }
-    });
-    
-    searchInput.addEventListener('input', (e) => {
-      const query = e.target.value.toLowerCase();
-      if (!query) {
-        searchResults.classList.remove('active');
-        return;
-      }
+    if (searchInput) {
+      const searchIndex = [];
+      document.querySelectorAll('.docs-content h2, .docs-content h3').forEach(el => {
+        if (el.id) {
+          searchIndex.push({
+            text: el.textContent.toLowerCase(),
+            title: el.textContent,
+            id: el.id
+          });
+        }
+      });
+
+      searchInput.addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase();
+        if (!query) {
+          searchResults.style.display = 'none';
+          return;
+        }
+
+        const results = searchIndex.filter(item => item.text.includes(query)).slice(0, 5);
+
+        if (results.length > 0) {
+           searchResults.innerHTML = results.map(r => `
+            <div style="padding: 5px 0; border-bottom: 1px solid #333; cursor: pointer;"
+                 onclick="document.getElementById('${r.id}').scrollIntoView({behavior:'smooth'}); searchResults.style.display='none';">
+              <div style="color: var(--acid-green); font-size: 0.9rem;">${r.title}</div>
+            </div>
+          `).join('');
+          searchResults.style.display = 'block';
+        } else {
+          searchResults.style.display = 'none';
+        }
+      });
       
-      const results = searchIndex.filter(item => item.text.includes(query)).slice(0, 8);
-      
-      searchResults.innerHTML = results.map(r => `
-        <div class="search-result-item" onclick="document.getElementById('${r.id}').scrollIntoView({behavior:'smooth'}); searchResults.classList.remove('active'); searchInput.value='';">
-          <div class="search-result-title">${r.title}</div>
-        </div>
-      `).join('') || '<div class="search-no-results">No results found</div>';
-      
-      searchResults.classList.add('active');
-    });
-    
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('.docs-search')) {
-        searchResults.classList.remove('active');
-      }
-    });
-    
-    document.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        searchInput.focus();
-      }
-    });
+      // CMD+K
+      document.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+          e.preventDefault();
+          searchInput.focus();
+        }
+      });
+    }
   </script>
 </body>
 </html>
