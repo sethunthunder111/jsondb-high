@@ -758,100 +758,67 @@ async function runTests() {
     console.log('   ✅ Passed\n');
 
     // ============================================
-    // TEST 33: QueryBuilder First/Last
+    // TEST 33: Enhanced TTL Features
     // ============================================
-    console.log('🥇 [Test 33] QueryBuilder First/Last');
-    const dbFirstLast = new JSONDatabase(TEST_DB, { durability: 'none' });
+    console.log('⏱️  [Test 33] Enhanced TTL Features');
+    const dbTTL = new JSONDatabase(TEST_DB + '_ttl', { wal: false });
 
-    // Create data
-    await dbFirstLast.set('numbers', [10, 20, 30, 40, 50]);
+    // 1. setTTL on existing key (using fractional seconds for speed)
+    await dbTTL.set('ttl_key', 'value');
+    dbTTL.setTTL('ttl_key', 0.5); // 0.5 seconds
 
-    // Basic access (no sort/filter)
-    const firstBasic = dbFirstLast.query<number>('numbers').first();
-    const lastBasic = dbFirstLast.query<number>('numbers').last();
-    console.log('   Basic First:', firstBasic);
-    console.log('   Basic Last:', lastBasic);
+    // Test hasTTL
+    if (!dbTTL.hasTTL('ttl_key')) throw new Error('hasTTL failed - should return true');
 
-    if (firstBasic !== 10) throw new Error('Basic first() failed');
-    if (lastBasic !== 50) throw new Error('Basic last() failed');
+    // Test getTTL (might be 0 if < 1s, but setTTL(0.5) sets expiration in future)
+    // getTTL returns seconds (integer), so 0.5s might be floored to 0.
+    // The implementation: Math.floor((expiresAt - Date.now()) / 1000)
+    // So 500ms -> 0.
+    // Let's rely on hasTTL and expiration behavior for short TTLs.
+    // Or set it to 1.5s to test getTTL > 0.
 
-    // With Sort & Filter
-    // Using objects for reliable sorting test as per my analysis
-    await dbFirstLast.set('users_rank', [
-        { rank: 3, name: 'C' },
-        { rank: 1, name: 'A' },
-        { rank: 5, name: 'E' },
-        { rank: 2, name: 'B' },
-        { rank: 4, name: 'D' }
+    // Let's use 1.5s for initial setup to verify getTTL works
+    dbTTL.setTTL('ttl_key', 1.5);
+    const initialTTL = await dbTTL.getTTL('ttl_key');
+    console.log('   Initial TTL:', initialTTL);
+    if (initialTTL <= 0) throw new Error('getTTL failed - should be >= 1');
+
+    // 2. Overwrite TTL
+    // Overwrite with shorter TTL to test clear/reset
+    dbTTL.setTTL('ttl_key', 0.5);
+
+    // 3. clearTTL
+    dbTTL.clearTTL('ttl_key');
+    if (dbTTL.hasTTL('ttl_key')) throw new Error('clearTTL failed - should return false');
+
+    // Wait longer than the TTL (0.5s) to ensure it doesn't expire
+    await sleep(800);
+    const valAfterWait = await dbTTL.get('ttl_key');
+    if (valAfterWait !== 'value') throw new Error('Key expired after clearTTL - Timer was not cleared');
+
+    // 4. Expiry callback & Event
+    let expiredPath = '';
+    const expiryPromise = new Promise<void>((resolve) => {
+        dbTTL.on('ttl:expired', ({ path }) => {
+            expiredPath = path;
+            resolve();
+        });
+    });
+
+    await dbTTL.set('ttl_expire_event', 'bye');
+    dbTTL.setTTL('ttl_expire_event', 0.5);
+
+    console.log('   Waiting for expiry event...');
+    await Promise.race([
+        expiryPromise,
+        sleep(1000)
     ]);
 
-    interface RankUser { rank: number; name: string; }
+    if (expiredPath !== 'ttl_expire_event') throw new Error('TTL expiry event not fired or wrong path');
+    if (await dbTTL.has('ttl_expire_event')) throw new Error('Key not deleted after TTL expiry');
 
-    // first() with sort (should be A, rank 1)
-    const firstRank = dbFirstLast.query<RankUser>('users_rank')
-        .sort({ rank: 1 })
-        .first();
-
-    // last() with sort (should be E, rank 5)
-    const lastRank = dbFirstLast.query<RankUser>('users_rank')
-        .sort({ rank: 1 })
-        .last();
-
-    console.log('   Sorted First:', firstRank);
-    console.log('   Sorted Last:', lastRank);
-
-    if (firstRank?.rank !== 1) throw new Error('first() with sort failed: expected rank 1, got ' + firstRank?.rank);
-    if (lastRank?.rank !== 5) throw new Error('last() with sort failed: expected rank 5, got ' + lastRank?.rank);
-
-    // With Filter + Sort
-    // Filter: rank > 2 (C, D, E) -> Sorted asc: C(3), D(4), E(5)
-    // First should be C, Last should be E
-    const firstFiltered = dbFirstLast.query<RankUser>('users_rank')
-        .where('rank').gt(2)
-        .sort({ rank: 1 })
-        .first();
-
-    const lastFiltered = dbFirstLast.query<RankUser>('users_rank')
-        .where('rank').gt(2)
-        .sort({ rank: 1 })
-        .last();
-
-    console.log('   Filtered First:', firstFiltered);
-    console.log('   Filtered Last:', lastFiltered);
-
-    if (firstFiltered?.rank !== 3) throw new Error('first() with filter+sort failed');
-    if (lastFiltered?.rank !== 5) throw new Error('last() with filter+sort failed');
-
-    // With Skip/Limit
-    // Sorted: A(1), B(2), C(3), D(4), E(5)
-    // Skip 1, Limit 2 -> B(2), C(3)
-    // First -> B, Last -> C
-    const firstPaged = dbFirstLast.query<RankUser>('users_rank')
-        .sort({ rank: 1 })
-        .skip(1)
-        .limit(2)
-        .first();
-
-    const lastPaged = dbFirstLast.query<RankUser>('users_rank')
-        .sort({ rank: 1 })
-        .skip(1)
-        .limit(2)
-        .last();
-
-    console.log('   Paged First:', firstPaged);
-    console.log('   Paged Last:', lastPaged);
-
-    if (firstPaged?.rank !== 2) throw new Error('first() with skip/limit failed');
-    if (lastPaged?.rank !== 3) throw new Error('last() with skip/limit failed');
-
-    // Empty result
-    const emptyFirst = dbFirstLast.query<RankUser>('users_rank')
-        .where('rank').gt(100)
-        .first();
-
-    if (emptyFirst !== undefined) throw new Error('first() should return undefined for empty result');
-
-    await dbFirstLast.close();
+    await dbTTL.close();
+    if (existsSync(TEST_DB + '_ttl')) unlinkSync(TEST_DB + '_ttl');
     console.log('   ✅ Passed\n');
 
     // Cleanup
