@@ -21,6 +21,13 @@ use btree::BTreeIndex;
 use schema::{Schema, validate};
 use std::collections::HashMap;
 use parking_lot::Mutex;
+use lru::LruCache;
+use std::num::NonZeroUsize;
+
+static REGEX_CACHE: once_cell::sync::Lazy<Mutex<LruCache<String, regex::Regex>>> =
+    once_cell::sync::Lazy::new(|| {
+        Mutex::new(LruCache::new(NonZeroUsize::new(100).unwrap()))
+    });
 
 struct TransactionState {
     undo_log: Vec<(String, Option<Value>)>,
@@ -37,7 +44,20 @@ struct PreparedFilter {
 impl PreparedFilter {
     fn from_query_filter(qf: &QueryFilter) -> Self {
         let regex = if qf.op == "regex" {
-            qf.value.as_str().and_then(|p| regex::Regex::new(p).ok())
+            qf.value.as_str().and_then(|p| {
+                let mut cache = REGEX_CACHE.lock();
+                if let Some(re) = cache.get(p) {
+                    Some(re.clone())
+                } else {
+                    match regex::Regex::new(p) {
+                        Ok(re) => {
+                            cache.push(p.to_string(), re.clone());
+                            Some(re)
+                        }
+                        Err(_) => None,
+                    }
+                }
+            })
         } else {
             None
         };
@@ -87,6 +107,24 @@ impl ThreadPoolConfig {
 // Global thread pool config (initialized once)
 static THREAD_CONFIG: once_cell::sync::Lazy<ThreadPoolConfig> = 
     once_cell::sync::Lazy::new(ThreadPoolConfig::new);
+
+// ============================================
+// OPTIMIZATIONS
+// ============================================
+
+struct PathSegment<'a> {
+    raw: &'a str,
+    index: Option<usize>,
+}
+
+fn parse_path(path: &str) -> Vec<PathSegment> {
+    path.split('.')
+        .map(|part| PathSegment {
+            raw: part,
+            index: part.parse::<usize>().ok(),
+        })
+        .collect()
+}
 
 // ============================================
 // DATA STRUCTURES
@@ -342,10 +380,34 @@ impl NativeDB {
     /// Legacy load (maintained for compatibility)
     #[napi]
     pub fn load(&self) -> Result<()> {
-        // Data is already loaded in constructor
-        Ok(())
+    let p = PathBuf::from(&self.path);
+    
+    // Try to read directly.
+    // If it fails (Err), we check IF it was "NotFound".
+    match fs::read_to_string(&p) {
+        Ok(contents) => {
+            // File exists and we read it! Time to parse.
+            let new_data: Value = serde_json::from_str(&contents).map_err(|e| {
+                Error::from_reason(format!("Failed to parse database: {}", e))
+            })?;
+
+            // CRITICAL ZONE: Quick swap
+            let mut data = self.data.write();
+            *data = new_data;
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // File doesn't exist? No problem, just do nothing or init empty.
+            // This is safer than p.exists()!
+            return Ok(()); 
+        }
+        Err(e) => {
+            // Genuine error (permission denied, etc.)
+            return Err(Error::from_reason(format!("Failed to read database: {}", e)));
+        }
     }
 
+    Ok(())
+}
     #[napi]
     pub fn save(&self) -> Result<()> {
         // Flush WAL first if enabled
@@ -449,32 +511,33 @@ impl NativeDB {
             return Ok(())
         }
         
-        let parts: Vec<&str> = path_str.split('.').collect();
-        if parts.is_empty() { return Ok(()) }
-        
-        let last_part = parts.last().unwrap();
-        let parent_parts = &parts[..parts.len()-1];
+        let mut parts = path_str.split('.');
+        let mut part = match parts.next() {
+            Some(p) => p,
+            None => return Ok(()),
+        };
         
         let mut current = root;
         
-        for (i, part) in parent_parts.iter().enumerate() {
+        for next_part in parts {
+            let is_next_array_idx = next_part.parse::<usize>().is_ok();
+
             if current.is_null() {
                  *current = Value::Object(serde_json::Map::new());
             }
-            let is_array_idx = parts[i+1].parse::<usize>().is_ok(); 
+
             if let Value::Object(map) = current {
-                if !map.contains_key(*part) {
-                    map.insert(part.to_string(), if is_array_idx { json!([]) } else { json!({}) });
+                if !map.contains_key(part) {
+                    map.insert(part.to_string(), if is_next_array_idx { json!([]) } else { json!({}) });
                 }
-                current = map.get_mut(*part).unwrap();
+                current = map.get_mut(part).unwrap();
             } else if let Value::Array(arr) = current {
                  if let Ok(idx) = part.parse::<usize>() {
                      while arr.len() <= idx {
                          arr.push(Value::Null);
                      }
                      if arr[idx].is_null() {
-                          let is_next_array = parts.get(i+1).map(|p| p.parse::<usize>().is_ok()).unwrap_or(false);
-                          arr[idx] = if is_next_array { json!([]) } else { json!({}) };
+                          arr[idx] = if is_next_array_idx { json!([]) } else { json!({}) };
                      }
                      current = &mut arr[idx];
                  } else {
@@ -483,12 +546,14 @@ impl NativeDB {
             } else {
                  return Err(Error::from_reason(format!("Path segment '{}' blocked by primitive", part)));
             }
+
+            part = next_part;
         }
 
         if let Value::Object(map) = current {
-            map.insert(last_part.to_string(), value);
+            map.insert(part.to_string(), value);
         } else if let Value::Array(arr) = current {
-            if let Ok(idx) = last_part.parse::<usize>() {
+            if let Ok(idx) = part.parse::<usize>() {
                 while arr.len() <= idx {
                     arr.push(Value::Null);
                 }
@@ -498,19 +563,19 @@ impl NativeDB {
             }
         } else {
              if current.is_null() {
-                 let is_array = last_part.parse::<usize>().is_ok();
+                 let is_array = part.parse::<usize>().is_ok();
                  if is_array {
-                     let idx = last_part.parse::<usize>().unwrap();
+                     let idx = part.parse::<usize>().unwrap();
                      let mut arr = vec![Value::Null; idx + 1];
                      arr[idx] = value;
                      *current = Value::Array(arr);
                  } else {
                      let mut map = serde_json::Map::new();
-                     map.insert(last_part.to_string(), value);
+                     map.insert(part.to_string(), value);
                      *current = Value::Object(map);
                  }
              } else {
-                  return Err(Error::from_reason(format!("Parent of '{}' is not an object/array", last_part)));
+                  return Err(Error::from_reason(format!("Parent of '{}' is not an object/array", part)));
              }
         }
         Ok(())
@@ -906,12 +971,16 @@ impl NativeDB {
         let left_items = get_items(&left_path).ok_or_else(|| Error::from_reason(format!("Left collection not found: {}", left_path)))?;
         let right_items = get_items(&right_path).ok_or_else(|| Error::from_reason(format!("Right collection not found: {}", right_path)))?;
 
+        // Parse fields
+        let left_segments = parse_path(&left_field);
+        let right_segments = parse_path(&right_field);
+
         // Build hash table on right collection
         use std::collections::HashMap;
         let mut hash_table: HashMap<String, Vec<&Value>> = HashMap::new();
         
         for item in &right_items {
-             if let Some(val) = self.get_value_at_field(item, &right_field) {
+             if let Some(val) = self.get_value_at_path_segments(item, &right_segments) {
                  let key = match val {
                      Value::String(s) => s.clone(),
                      _ => val.to_string(),
@@ -924,12 +993,12 @@ impl NativeDB {
         let results: Vec<Value> = if THREAD_CONFIG.should_parallelize(left_items.len()) {
             left_items
                 .par_iter()
-                .map(|left_item| self.join_item(left_item, &left_field, &as_field, &hash_table))
+                .map(|left_item| self.join_item(left_item, &left_segments, &as_field, &hash_table))
                 .collect()
         } else {
             left_items
                 .iter()
-                .map(|left_item| self.join_item(left_item, &left_field, &as_field, &hash_table))
+                .map(|left_item| self.join_item(left_item, &left_segments, &as_field, &hash_table))
                 .collect()
         };
 
@@ -940,28 +1009,65 @@ impl NativeDB {
     fn join_item(
         &self,
         left_item: &Value,
-        left_field: &str,
+        left_segments: &[PathSegment],
         as_field: &str,
         hash_table: &HashMap<String, Vec<&Value>>,
     ) -> Value {
+        // Calculate matches first (read-only)
+        let matches_curr = if let Some(val) = self.get_value_at_path_segments(left_item, left_segments) {
+            let matches = match val {
+                Value::String(s) => hash_table.get(s),
+                _ => {
+                    let key = val.to_string();
+                    hash_table.get(&key)
+                }
+            };
+
+            if let Some(m_list) = matches {
+                m_list.iter().map(|m| (*m).clone()).collect()
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+
+        // Clone and modify
         let mut joined = left_item.clone();
         if let Value::Object(ref mut map) = joined {
-            let mut matches_curr = Vec::new();
-            if let Some(val) = self.get_value_at_field(left_item, left_field) {
-                let key = match val {
-                    Value::String(s) => s.clone(),
-                    _ => val.to_string(),
-                };
-
-                if let Some(matches) = hash_table.get(&key) {
-                    for m in matches {
-                        matches_curr.push((*m).clone());
-                    }
-                }
-            }
             map.insert(as_field.to_string(), Value::Array(matches_curr));
         }
         joined
+    }
+
+    /// Helper to get arbitrary field value (supports dot notation)
+    fn get_value_at_path_segments<'a>(&self, item: &'a Value, segments: &[PathSegment]) -> Option<&'a Value> {
+        let mut current = item;
+
+        for segment in segments {
+            match current {
+                Value::Object(map) => {
+                    if let Some(v) = map.get(segment.raw) {
+                        current = v;
+                    } else {
+                        return None;
+                    }
+                }
+                Value::Array(arr) => {
+                    if let Some(idx) = segment.index {
+                         if let Some(v) = arr.get(idx) {
+                            current = v;
+                         } else {
+                             return None;
+                         }
+                    } else {
+                        return None;
+                    }
+                }
+                _ => return None,
+            }
+        }
+        Some(current)
     }
 
     /// Helper to get arbitrary field value (supports dot notation)
@@ -1109,7 +1215,7 @@ impl NativeDB {
         let indexes = self.indexes.read();
         if let Some(idx) = indexes.get(&name) {
             if let Some(paths) = idx.find(&key) {
-                return Ok(paths.clone());
+                return Ok(paths.iter().cloned().collect());
             }
         }
         Ok(vec![])
@@ -1128,8 +1234,11 @@ impl NativeDB {
 
     #[napi]
     pub fn register_schema(&self, path: String, schema_json: String) -> Result<()> {
-        let schema: Schema = serde_json::from_str(&schema_json)
+        let mut schema: Schema = serde_json::from_str(&schema_json)
             .map_err(|e| Error::from_reason(format!("Invalid schema JSON: {}", e)))?;
+
+        schema.compile().map_err(|e| Error::from_reason(format!("Invalid regex in schema: {}", e)))?;
+
         let mut schemas = self.schemas.write();
         schemas.insert(path, schema);
         Ok(())

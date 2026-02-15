@@ -35,6 +35,9 @@ pub struct Schema {
     pub maximum: Option<f64>,
     pub exclusive_minimum: Option<f64>,
     pub exclusive_maximum: Option<f64>,
+
+    #[serde(skip)]
+    pub compiled_pattern: Option<Regex>,
     
     // Array constraints
     pub items: Option<Box<Schema>>,
@@ -44,6 +47,26 @@ pub struct Schema {
     
     // Enum
     pub r#enum: Option<Vec<Value>>,
+}
+
+impl Schema {
+    pub fn compile(&mut self) -> Result<(), String> {
+        if let Some(pattern_str) = &self.pattern {
+            let re = Regex::new(pattern_str).map_err(|e| e.to_string())?;
+            self.compiled_pattern = Some(re);
+        }
+
+        if let Some(items) = &mut self.items {
+            items.compile()?;
+        }
+
+        if let Some(props) = &mut self.properties {
+            for schema in props.values_mut() {
+                schema.compile()?;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -297,6 +320,7 @@ mod tests {
             max_items: None,
             unique_items: Some(true),
             r#enum: None,
+            compiled_pattern: None,
         };
 
         let valid = json!([1, 2, 3]);
@@ -325,6 +349,7 @@ mod tests {
             max_items: None,
             unique_items: Some(true),
             r#enum: None,
+            compiled_pattern: None,
         };
 
         let valid = json!([
@@ -359,6 +384,7 @@ mod tests {
             max_items: None,
             unique_items: Some(true),
             r#enum: None,
+            compiled_pattern: None,
         };
 
         let valid = json!([
@@ -393,6 +419,7 @@ mod tests {
             max_items: None,
             unique_items: Some(true),
             r#enum: None,
+            compiled_pattern: None,
         };
 
         // 1 and 1.0 are different in to_string() representation, hence unique
