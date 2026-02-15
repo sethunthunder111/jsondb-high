@@ -757,6 +757,44 @@ async function runTests() {
     if (existsSync(TEST_DB + '.schema.wal')) unlinkSync(TEST_DB + '.schema.wal');
     console.log('   ✅ Passed\n');
 
+    // ============================================
+    // TEST 33: Restore Snapshot (Success)
+    // ============================================
+    console.log('📸 [Test 33] Restore Snapshot (Success)');
+    const dbRestore = new JSONDatabase(TEST_DB, { wal: false });
+    await dbRestore.set('restore_test', 'original');
+    const snapPath = await dbRestore.createSnapshot('restore-success');
+
+    await dbRestore.set('restore_test', 'modified');
+    if (await dbRestore.get('restore_test') !== 'modified') throw new Error('Failed to modify before restore');
+
+    await dbRestore.restoreSnapshot(snapPath);
+    if (await dbRestore.get('restore_test') !== 'original') throw new Error('Restore failed to recover original data');
+
+    await dbRestore.close();
+    if (existsSync(snapPath)) unlinkSync(snapPath);
+    console.log('   ✅ Passed\n');
+
+    // ============================================
+    // TEST 34: Restore Snapshot (File Not Found)
+    // ============================================
+    console.log('📸 [Test 34] Restore Snapshot (File Not Found)');
+    const dbRestoreError = new JSONDatabase(TEST_DB, { wal: false });
+    const nonExistentPath = 'non_existent_snapshot.bak';
+
+    try {
+        await dbRestoreError.restoreSnapshot(nonExistentPath);
+        throw new Error('Should have thrown error for missing snapshot');
+    } catch (e: any) {
+        if (!e.message.includes('Snapshot not found:')) {
+            throw new Error('Unexpected error message: ' + e.message);
+        }
+        console.log('   Caught expected error:', e.message);
+    }
+
+    await dbRestoreError.close();
+    console.log('   ✅ Passed\n');
+
     // Cleanup
     await dbWithIndex.close();
     cleanup();
@@ -771,6 +809,7 @@ async function runTests() {
     console.log('   • Batched Write Performance');
     console.log('   • New Query Operators (containsAll, containsAny)');
     console.log('   • Parallel Join/Lookup');
+    console.log('   • Snapshot Restoration & Error Handling');
 }
 
 runTests().catch(e => {
