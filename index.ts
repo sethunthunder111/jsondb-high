@@ -454,7 +454,7 @@ export class WhereClause<T> {
 }
 
 export class QueryBuilder<T = unknown> {
-    private items: T[];
+    private items: T[] | Record<string, T>;
     public db: JSONDatabase;
     private _limit?: number;
     private _skip?: number;
@@ -464,7 +464,7 @@ export class QueryBuilder<T = unknown> {
     private queryFilters: QueryFilter[] = [];
     private path: string = '';
 
-    constructor(items: T[], db: JSONDatabase) {
+    constructor(items: T[] | Record<string, T>, db: JSONDatabase) {
         this.items = items;
         this.db = db;
     }
@@ -500,8 +500,16 @@ export class QueryBuilder<T = unknown> {
             lookup.get(key)!.push(item);
         }
         
+        // Ensure items is an array for mapping
+        let currentItems: T[];
+        if (Array.isArray(this.items)) {
+            currentItems = this.items;
+        } else {
+            currentItems = Object.values(this.items as Record<string, T>);
+        }
+
         // Perform join
-        this.items = this.items.map(item => {
+        this.items = currentItems.map(item => {
             const key = String((item as any)[config.localField]);
             const matches = lookup.get(key) || [];
             return {
@@ -620,10 +628,56 @@ export class QueryBuilder<T = unknown> {
         return value;
     }
 
-    private applyFilters(): T[] {
-        let result = this.items;
-        for (const filter of this.filters) {
-            result = result.filter(filter);
+    private applyFilters(limit?: number): T[] {
+        if (Array.isArray(this.items)) {
+            // Optimization: no filters and no limit -> return copy of original array
+            if (this.filters.length === 0 && limit === undefined) {
+                 return [...this.items];
+            }
+
+            const result: T[] = [];
+            let count = 0;
+            for (const item of this.items) {
+                let match = true;
+                for (const filter of this.filters) {
+                    if (!filter(item)) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    result.push(item);
+                    count++;
+                    if (limit !== undefined && count >= limit) break;
+                }
+            }
+            return result;
+        }
+
+        // Handle Record<string, T>
+        const items = this.items as Record<string, T>;
+        if (this.filters.length === 0 && limit === undefined) {
+            return Object.values(items);
+        }
+
+        const result: T[] = [];
+        let count = 0;
+        for (const key in items) {
+            if (Object.prototype.hasOwnProperty.call(items, key)) {
+                const item = items[key];
+                let match = true;
+                for (const filter of this.filters) {
+                    if (!filter(item)) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    result.push(item);
+                    count++;
+                    if (limit !== undefined && count >= limit) break;
+                }
+            }
         }
         return result;
     }
@@ -651,7 +705,12 @@ export class QueryBuilder<T = unknown> {
         }
 
         if (!usedIndex) {
-            result = this.applyFilters();
+            // Optimization: if no sort, pass limit + skip to applyFilters to avoid processing all items
+            let effectiveLimit: number | undefined;
+            if (!this._sortOptions && this._limit !== undefined) {
+                 effectiveLimit = (this._skip || 0) + this._limit;
+            }
+            result = this.applyFilters(effectiveLimit);
         } else {
              // If we used index, we still need to apply other filters
              // Note: the 'eq' filter that used the index is already satisfied, 
@@ -721,7 +780,7 @@ export class QueryBuilder<T = unknown> {
     }
 
     first(): T | undefined {
-        const items = this.applyFilters();
+        const items = this.applyFilters(1);
         return items[0];
     }
 
@@ -1243,11 +1302,11 @@ export class JSONDatabase extends EventEmitter {
 
     public query<T = unknown>(path: string): QueryBuilder<T> {
         const data = this.native.get(path);
-        let items: T[] = [];
+        let items: T[] | Record<string, T> = [];
         if (Array.isArray(data)) {
-            items = [...data] as T[];
+            items = data as T[];
         } else if (typeof data === 'object' && data !== null) {
-            items = Object.values(data) as T[];
+            items = data as Record<string, T>;
         }
         return new QueryBuilder<T>(items, this).setPath(path);
     }
