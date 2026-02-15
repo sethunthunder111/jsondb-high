@@ -919,7 +919,6 @@ async function runTests() {
     dbTTL.clearTTL('ttl_key');
     if (dbTTL.hasTTL('ttl_key')) throw new Error('clearTTL failed - should return false');
 
-    // Wait longer than the TTL (0.5s) to ensure it doesn't expire
     await sleep(800);
     const valAfterWait = await dbTTL.get('ttl_key');
     if (valAfterWait !== 'value') throw new Error('Key expired after clearTTL - Timer was not cleared');
