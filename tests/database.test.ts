@@ -757,6 +757,41 @@ async function runTests() {
     if (existsSync(TEST_DB + '.schema.wal')) unlinkSync(TEST_DB + '.schema.wal');
     console.log('   ✅ Passed\n');
 
+    // ============================================
+    // TEST 33: db.values()
+    // ============================================
+    console.log('📋 [Test 33] db.values()');
+
+    // 1. Test Object
+    await dbWithIndex.set('values_test.obj', { a: 1, b: 2, c: 3 });
+    const objVals = await dbWithIndex.values<number>('values_test.obj');
+    console.log('   Object values:', objVals);
+    if (objVals.length !== 3 || !objVals.includes(1) || !objVals.includes(2) || !objVals.includes(3)) {
+        throw new Error('db.values() failed for object');
+    }
+
+    // 2. Test Array
+    await dbWithIndex.set('values_test.arr', [10, 20]);
+    const arrVals = await dbWithIndex.values<number>('values_test.arr');
+    console.log('   Array values:', arrVals);
+    if (arrVals.length !== 2 || !arrVals.includes(10) || !arrVals.includes(20)) {
+        throw new Error('db.values() failed for array');
+    }
+
+    // 3. Test Primitive (should be empty based on implementation)
+    await dbWithIndex.set('values_test.prim', 'hello');
+    const primVals = await dbWithIndex.values('values_test.prim');
+    console.log('   Primitive values:', primVals);
+    if (primVals.length !== 0) throw new Error('db.values() failed for primitive');
+
+    // 4. Test Non-existent (should be empty)
+    const nonExistVals = await dbWithIndex.values('values_test.nothing');
+    if (nonExistVals.length !== 0) throw new Error('db.values() failed for non-existent path');
+
+    // Cleanup
+    await dbWithIndex.delete('values_test');
+    console.log('   ✅ Passed\n');
+
     // Cleanup
     await dbWithIndex.close();
     cleanup();
