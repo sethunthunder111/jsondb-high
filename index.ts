@@ -122,6 +122,35 @@ export interface DBOptions {
      * Default: 100ms
      */
     slowQueryThresholdMs?: number;
+
+    // ============================================
+    // v5.5: Memory Management
+    // ============================================
+    /**
+     * Maximum memory limit for the database.
+     * When approached, least-recently-used data is automatically offloaded to disk.
+     * Examples: '256mb', '1gb', '512mb'
+     * Default: '0' (disabled)
+     */
+    memoryLimit?: string;
+
+    /**
+     * Directory for offloaded cold storage files.
+     * Default: '<dbFile>.cold/'
+     */
+    coldStorageDir?: string;
+
+    /**
+     * Memory utilization percentage at which eviction starts.
+     * Default: 80
+     */
+    evictionThresholdPct?: number;
+
+    /**
+     * Target memory utilization percentage after eviction.
+     * Default: 60
+     */
+    evictionTargetPct?: number;
 }
 
 export interface TTLEntry {
@@ -562,12 +591,35 @@ export class QueryBuilder<T = unknown> {
         return this;
     }
 
-    // Aggregation methods
+    // Aggregation methods — use native engine when possible
     count(): number {
+        // Fast path: use native aggregate if we have queryFilters and no JS closures
+        if (this.db && this.items === null && this.queryFilters.length > 0 && this.filters.length === 0) {
+            try {
+                const result = JSON.parse((this.db as any).native.executeAggregateFast(
+                    this.path,
+                    JSON.stringify(this.queryFilters),
+                    'count',
+                    null
+                ));
+                if (typeof result === 'number') return result;
+            } catch { /* fallback to JS */ }
+        }
         return this.applyFilters().length;
     }
 
     sum(field: string): number {
+        if (this.db && this.items === null && this.queryFilters.length > 0 && this.filters.length === 0) {
+            try {
+                const result = JSON.parse((this.db as any).native.executeAggregateFast(
+                    this.path,
+                    JSON.stringify(this.queryFilters),
+                    'sum',
+                    field
+                ));
+                if (typeof result === 'number') return result;
+            } catch { /* fallback to JS */ }
+        }
         return this.applyFilters().reduce((acc, item) => {
             const value = this.getFieldValue(item, field);
             return acc + (typeof value === 'number' ? value : 0);
@@ -575,12 +627,34 @@ export class QueryBuilder<T = unknown> {
     }
 
     avg(field: string): number {
+        if (this.db && this.items === null && this.queryFilters.length > 0 && this.filters.length === 0) {
+            try {
+                const result = JSON.parse((this.db as any).native.executeAggregateFast(
+                    this.path,
+                    JSON.stringify(this.queryFilters),
+                    'avg',
+                    field
+                ));
+                if (typeof result === 'number') return result;
+            } catch { /* fallback to JS */ }
+        }
         const items = this.applyFilters();
         if (items.length === 0) return 0;
         return this.sum(field) / items.length;
     }
 
     min(field: string): number | undefined {
+        if (this.db && this.items === null && this.queryFilters.length > 0 && this.filters.length === 0) {
+            try {
+                const result = JSON.parse((this.db as any).native.executeAggregateFast(
+                    this.path,
+                    JSON.stringify(this.queryFilters),
+                    'min',
+                    field
+                ));
+                if (typeof result === 'number') return result;
+            } catch { /* fallback to JS */ }
+        }
         const items = this.applyFilters();
         if (items.length === 0) return undefined;
         return Math.min(...items.map(item => {
@@ -590,6 +664,17 @@ export class QueryBuilder<T = unknown> {
     }
 
     max(field: string): number | undefined {
+        if (this.db && this.items === null && this.queryFilters.length > 0 && this.filters.length === 0) {
+            try {
+                const result = JSON.parse((this.db as any).native.executeAggregateFast(
+                    this.path,
+                    JSON.stringify(this.queryFilters),
+                    'max',
+                    field
+                ));
+                if (typeof result === 'number') return result;
+            } catch { /* fallback to JS */ }
+        }
         const items = this.applyFilters();
         if (items.length === 0) return undefined;
         return Math.max(...items.map(item => {
@@ -700,7 +785,9 @@ private applyFilters(limit?: number): T[] {
         const startTime = performance.now();
         let result: T[] = [];
         let usedIndex = false;
+        let usedNativeEngine = false;
 
+        // ===== STRATEGY 1: Index Lookup (fastest for eq on indexed fields) =====
         if (this.db && this.queryFilters.length > 0) {
             for (const f of this.queryFilters) {
                 if (f.op === 'eq') {
@@ -718,39 +805,73 @@ private applyFilters(limit?: number): T[] {
             }
         }
 
-        if (!usedIndex) {
-            // Optimization: Use native parallel query if possible
-            if (this.items === null && this.queryFilters.length > 0) {
-                 // Native filtering
-                 result = await this.db.parallelQuery<T>(this.path, this.queryFilters);
-
-                 // Apply JS filters if any (including those that generated queryFilters, to be safe)
-                 if (this.filters.length > 0) {
-                     for (const filter of this.filters) {
-                         result = result.filter(filter);
-                     }
-                 }
-            } else {
-                // Fallback: load full data if needed and filter in JS
-                this.ensureData();
-
-                // Optimization: if no sort, pass limit + skip to applyFilters to avoid processing all items
-                let effectiveLimit: number | undefined;
-                if (!this._sortOptions && this._limit !== undefined) {
-                     effectiveLimit = (this._skip || 0) + this._limit;
+        // ===== STRATEGY 2: Native Rust Query Engine (entire pipeline in Rust) =====
+        if (!usedIndex && this.items === null && this.db) {
+            // Check if we can use full native pipeline (no custom JS closures)
+            const hasCustomJSFilters = this.filters.length > this.queryFilters.length;
+            // If only queryFilters exist (from where().eq(), etc.), do everything in Rust
+            if (this.queryFilters.length > 0 && !hasCustomJSFilters) {
+                try {
+                    const sortJson = this._sortOptions ? JSON.stringify(this._sortOptions) : null;
+                    // Use fast string path — returns JSON string instead of N-API Value
+                    // JSON.parse() is ~10x faster than N-API's recursive Value→JS conversion
+                    const jsonStr = (this.db as any).native.executeQueryFast(
+                        this.path,
+                        JSON.stringify(this.queryFilters),
+                        sortJson,
+                        this._limit ?? null,
+                        this._skip ?? null,
+                        this._selectFields ?? null,
+                    );
+                    
+                    if (typeof jsonStr === 'string') {
+                        result = JSON.parse(jsonStr) as T[];
+                        usedNativeEngine = true;
+                    }
+                } catch {
+                    // Fallback to JS-based query if native engine fails
+                    usedNativeEngine = false;
                 }
-                result = this.applyFilters(effectiveLimit);
             }
-        } else {
-             // If we used index, we still need to apply other filters
-             // Note: the 'eq' filter that used the index is already satisfied, 
-             // but applyFilters() will run it again in JS which is fine for correctness.
-             for (const filter of this.filters) {
-                 result = result.filter(filter);
-             }
+            
+            // Partial native: use Rust for filtering, JS for post-processing
+            if (!usedNativeEngine && this.queryFilters.length > 0) {
+                result = await this.db.parallelQuery<T>(this.path, this.queryFilters);
+
+                // Apply custom JS filters (closures added via .filter())
+                if (this.filters.length > 0) {
+                    for (const filter of this.filters) {
+                        result = result.filter(filter);
+                    }
+                }
+            }
         }
 
-        const finalResult = this.applyPostProcessing(result);
+        // ===== STRATEGY 3: Full JS Fallback =====
+        if (!usedIndex && !usedNativeEngine && result.length === 0) {
+            this.ensureData();
+            let effectiveLimit: number | undefined;
+            if (!this._sortOptions && this._limit !== undefined) {
+                effectiveLimit = (this._skip || 0) + this._limit;
+            }
+            result = this.applyFilters(effectiveLimit);
+        }
+
+        // ===== Post-processing (only needed for Strategy 2 partial native & Strategy 3) =====
+        let finalResult: T[];
+        if (usedNativeEngine) {
+            // Native engine already handled sort/skip/limit/select
+            finalResult = result;
+        } else if (usedIndex) {
+            // Apply remaining JS filters after index lookup
+            for (const filter of this.filters) {
+                result = result.filter(filter);
+            }
+            finalResult = this.applyPostProcessing(result);
+        } else {
+            finalResult = this.applyPostProcessing(result);
+        }
+
         const duration = performance.now() - startTime;
         
         // Slow query detection
@@ -760,7 +881,8 @@ private applyFilters(limit?: number): T[] {
                 path: this.path,
                 filters: this.queryFilters,
                 duration,
-                usedIndex
+                usedIndex,
+                usedNativeEngine,
             });
         }
 
@@ -903,6 +1025,16 @@ export class JSONDatabase extends EventEmitter {
                      }
                 }
             }
+        }
+
+        // v5.5: Configure memory management
+        if (options.memoryLimit && typeof this.native.configureMemory === 'function') {
+            this.native.configureMemory(
+                options.memoryLimit,
+                options.coldStorageDir ?? null,
+                options.evictionThresholdPct ?? null,
+                options.evictionTargetPct ?? null,
+            );
         }
         
         // Cleanup on process exit
@@ -1269,7 +1401,16 @@ export class JSONDatabase extends EventEmitter {
     // ============================================
 
     public async get<T = unknown>(path: string, defaultValue: T | null = null): Promise<T> {
-        const val = this.native.get(path);
+        let val = this.native.get(path);
+        
+        // Automatic cold storage restoration
+        if (this.isColdPointer(val)) {
+            const restored = this.native.restore(path);
+            if (restored) {
+                 val = this.native.get(path);
+            }
+        }
+        
         return (val === null || val === undefined ? defaultValue : val) as T;
     }
 
@@ -1278,7 +1419,16 @@ export class JSONDatabase extends EventEmitter {
      * @internal
      */
     public getSync<T = unknown>(path: string, defaultValue: T | null = null): T {
-        const val = this.native.get(path);
+        let val = this.native.get(path);
+        
+        // Automatic cold storage restoration (Sync)
+        if (this.isColdPointer(val)) {
+            const restored = this.native.restore(path);
+            if (restored) {
+                 val = this.native.get(path);
+            }
+        }
+        
         return (val === null || val === undefined ? defaultValue : val) as T;
     }
 
@@ -1288,50 +1438,144 @@ export class JSONDatabase extends EventEmitter {
             this.native.validatePath(path, value);
         }
         
-        const oldValue = this.native.get(path);
+        // Optimally only fetch oldValue if needed (subscribers or indices)
+        const needsFetch = this.subscriptions.size > 0 || this.listenerCount('change') > 0 || this.indices.length > 0;
+        const oldValue = needsFetch ? this.native.get(path) : undefined;
+        
         value = this.runMiddleware('before', 'set', path, value);
         this.native.set(path, value);
         this.runMiddleware('after', 'set', path, value);
         this.triggerSave();
         this.updateIndicesForPath(path, value, false);
-        this.notifySubscribers(path, value, oldValue);
+        
+        if (needsFetch) {
+            this.notifySubscribers(path, value, oldValue);
+        }
     }
 
     public async has(path: string): Promise<boolean> {
         return this.native.has(path);
     }
 
+    /**
+     * Offload a specific path to disk to save memory.
+     * Replaces the data with a small pointer marker.
+     * Automatically restored on access via get().
+     * @returns ID of the cold storage file, or empty string if failed/empty
+     */
+    public async offload(path: string): Promise<string> {
+        return this.native.offload(path);
+    }
+
+    /**
+     * Manually restore offloaded data.
+     * @returns true if restored, false if not found or not cold
+     */
+    public async restore(path: string): Promise<boolean> {
+        return this.native.restore(path);
+    }
+
+    // ============================================
+    // v5.5: MEMORY MANAGEMENT
+    // ============================================
+
+    /**
+     * Get memory usage statistics.
+     * Returns total estimated bytes, max memory, cold/hot key counts, and utilization.
+     */
+    public async memoryStats(): Promise<{
+        totalEstimatedBytes: number;
+        maxMemoryBytes: number;
+        coldKeysCount: number;
+        hotKeysCount: number;
+        utilizationPct: number;
+    }> {
+        if (typeof this.native.memoryStats === 'function') {
+            return this.native.memoryStats();
+        }
+        return { totalEstimatedBytes: 0, maxMemoryBytes: 0, coldKeysCount: 0, hotKeysCount: 0, utilizationPct: 0 };
+    }
+
+    /**
+     * Manually trigger memory pressure check.
+     * Returns list of keys that were evicted to cold storage.
+     */
+    public async checkMemoryPressure(): Promise<string[]> {
+        if (typeof this.native.checkMemoryPressure === 'function') {
+            return this.native.checkMemoryPressure();
+        }
+        return [];
+    }
+
+    private isColdPointer(value: unknown): boolean {
+        return typeof value === 'object' && value !== null && (value as any).__cold__ === true && typeof (value as any).id === 'string';
+    }
+
     public async delete(path: string): Promise<void> {
-        const oldValue = this.native.get(path);
+        const needsFetch = this.subscriptions.size > 0 || this.listenerCount('change') > 0 || this.indices.length > 0;
+        const oldValue = needsFetch ? this.native.get(path) : undefined;
+        
         this.runMiddleware('before', 'delete', path, undefined);
         this.native.delete(path);
         this.runMiddleware('after', 'delete', path, undefined);
         this.triggerSave();
         this.updateIndicesForPath(path, oldValue, true);
         this.clearTTL(path);
-        this.notifySubscribers(path, undefined, oldValue);
+        
+        if (needsFetch) {
+            this.notifySubscribers(path, undefined, oldValue);
+        }
     }
 
     public async push(path: string, ...items: unknown[]): Promise<void> {
-        // Validation for each item if path matches a schema
-        // Note: push adds to array, so we should ideally validate the item against schema.items 
-        // if the path itself is a collection with a schema.
-        // For simplicity, we can validate the whole new collection after pushing? 
-        // No, let's validate each item if possible, or skip for now and rely on full collection validation.
+        const needsFetch = this.subscriptions.size > 0 || this.listenerCount('change') > 0;
+        const oldValue = needsFetch ? this.native.get(path) : undefined;
         
-        const oldValue = this.native.get(path);
-        for (const item of items) {
-             // Basic validation attempt: we don't know if 'item' matches 'path' or 'path' is parent.
-             // Native validatePath handles prefix matching.
-            this.native.push(path, item);
+        // v5.5: Use native pushBatch for multi-item push (single lock, HashSet dedup)
+        if (items.length > 1 && typeof this.native.pushBatch === 'function') {
+            try {
+                this.native.pushBatch(path, items);
+            } catch {
+                // Fallback to one-by-one push
+                for (const item of items) {
+                    this.native.push(path, item);
+                }
+            }
+        } else {
+            for (const item of items) {
+                this.native.push(path, item);
+            }
         }
-        const newValue = this.native.get(path);
+        
         this.triggerSave();
-        // Arrays don't need index updates (indices are for object collections)
-        this.notifySubscribers(path, newValue, oldValue);
+        
+        if (needsFetch) {
+            const newValue = this.native.get(path);
+            this.notifySubscribers(path, newValue, oldValue);
+        }
     }
 
     public async pull(path: string, ...items: unknown[]): Promise<void> {
+        // v5.5: Use native pullItems for O(N) single-pass removal with HashSet
+        if (typeof this.native.pullItems === 'function') {
+            try {
+                const needsFetch = this.subscriptions.size > 0 || this.listenerCount('change') > 0;
+                const oldValue = needsFetch ? this.native.get(path) : undefined;
+                
+                this.native.pullItems(path, items);
+                this.triggerSave();
+                
+                if (needsFetch) {
+                    const newValue = this.native.get(path);
+                    this.notifySubscribers(path, newValue, oldValue);
+                }
+                return;
+            } catch {
+                // Fallback to JS-based pull
+            }
+        }
+        
+        // JS fallback
         const arr = await this.get<unknown[]>(path);
         if (Array.isArray(arr)) {
             const newArr = arr.filter(x => !items.some(i => deepEqual(x, i)));
@@ -1736,10 +1980,44 @@ export class JSONDatabase extends EventEmitter {
      * ]);
      * ```
      */
+    /**
+     * Execute parallel query with native Rust filtering.
+     * More efficient than JS-based queries for large datasets (≥100 items).
+     * Automatically uses parallel iteration when beneficial.
+     * 
+     * @param path - Path to the collection to query
+     * @param filters - Array of filter conditions to apply
+     * @returns Filtered results array
+     * 
+     * @example
+     * ```typescript
+     * const adults = await db.parallelQuery('users', [
+     *     { field: 'age', op: 'gte', value: 18 },
+     *     { field: 'status', op: 'eq', value: 'active' }
+     * ]);
+     * ```
+     */
     public async parallelQuery<T = unknown>(
         path: string, 
         filters: QueryFilter[]
     ): Promise<T[]> {
+        // v5.5: Use fast string path to avoid N-API object creation overhead
+        if (typeof this.native.executeQueryFast === 'function') {
+            try {
+                const jsonStr = this.native.executeQueryFast(
+                    path,
+                    JSON.stringify(filters),
+                    null, // sort
+                    null, // limit
+                    null, // skip
+                    null  // select
+                );
+                return JSON.parse(jsonStr) as T[];
+            } catch (e) {
+                // Fallback if parsing fails
+            }
+        }
+        
         const result = this.native.parallelQuery(path, filters);
         return result as T[];
     }
@@ -1765,6 +2043,22 @@ export class JSONDatabase extends EventEmitter {
         operation: 'sum' | 'avg' | 'min' | 'max' | 'count',
         field?: string
     ): Promise<number | null> {
+        // v5.5: Use fast string path
+        if (typeof this.native.executeAggregateFast === 'function') {
+            try {
+                const jsonStr = this.native.executeAggregateFast(
+                    path,
+                    JSON.stringify([]), // No filters (parallelAggregate API doesn't take filters explicitly)
+                    operation,
+                    field
+                );
+                const result = JSON.parse(jsonStr);
+                return result === null || result === undefined ? null : result;
+            } catch {
+                // Fallback
+            }
+        }
+
         const result = this.native.parallelAggregate(path, operation, field);
         return result === null || result === undefined ? null : result;
     }

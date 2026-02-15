@@ -1,7 +1,8 @@
+#![allow(dead_code)]
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter};
-use std::path::Path;
+// use std::path::Path;
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
 
@@ -92,7 +93,7 @@ impl BTreeIndex {
 
     pub fn load_or_create(name: String, field: String, base_path: &str) -> Result<Self> {
         let path = format!("{}.{}.idx", base_path, name);
-        let p = Path::new(&path);
+        let p = std::path::Path::new(&path);
         
         if p.exists() {
             let file = File::open(p)?;

@@ -17,8 +17,16 @@ mod wal;
 mod btree;
 mod schema;
 
+// v5.5 Enterprise modules
+mod query_engine;
+mod memory_manager;
+mod write_lock;
+
 use btree::BTreeIndex;
 use schema::{Schema, validate};
+use query_engine::{CompiledFilter, execute_query, execute_aggregate, parse_sort_specs};
+use memory_manager::{MemoryManager, MemoryConfig, parse_memory_limit};
+use write_lock::StripedLockManager;
 use std::collections::HashMap;
 use parking_lot::Mutex;
 use lru::LruCache;
@@ -117,7 +125,7 @@ struct PathSegment<'a> {
     index: Option<usize>,
 }
 
-fn parse_path(path: &str) -> Vec<PathSegment> {
+fn parse_path<'a>(path: &'a str) -> Vec<PathSegment<'a>> {
     path.split('.')
         .map(|part| PathSegment {
             raw: part,
@@ -180,6 +188,7 @@ pub struct DBOptions {
     pub durability: DurabilityMode,
     pub wal_batch_size: usize,
     pub wal_flush_ms: u64,
+    pub lock_timeout_ms: u64,
 }
 
 impl Default for DBOptions {
@@ -189,6 +198,7 @@ impl Default for DBOptions {
             durability: DurabilityMode::Batched,
             wal_batch_size: 1000,
             wal_flush_ms: 10,
+            lock_timeout_ms: 5000, // Default 5s timeout
         }
     }
 }
@@ -215,6 +225,12 @@ pub struct NativeDB {
     // v5.1 Transactions
     transaction_state: Arc<Mutex<Option<TransactionState>>>,
 
+    // v5.5: Smart Memory Manager
+    memory_manager: Arc<Mutex<MemoryManager>>,
+
+    // v5.5: Write concurrency (striped locks)
+    write_locks: Arc<StripedLockManager>,
+
     // Options (kept for future use)
     #[allow(dead_code)]
     options: DBOptions,
@@ -230,6 +246,7 @@ impl NativeDB {
             durability: if wal { DurabilityMode::Batched } else { DurabilityMode::None },
             wal_batch_size: 1000,
             wal_flush_ms: 10,
+            lock_timeout_ms: 0,
         };
         
         Self::new_with_options_internal(path, options)
@@ -240,7 +257,7 @@ impl NativeDB {
         // 1. Acquire process lock if requested
         let process_lock = match options.lock_mode {
             LockMode::Exclusive => {
-                match ProcessLock::acquire(&path) {
+                match ProcessLock::acquire(&path, options.lock_timeout_ms) {
                     Ok(lock) => Some(lock),
                     Err(e) => return Err(Error::from_reason(format!("Failed to acquire lock: {}", e))),
                 }
@@ -299,6 +316,9 @@ impl NativeDB {
             }
         }
         
+        let memory_manager = MemoryManager::new(&path, MemoryConfig::default());
+        let write_locks = StripedLockManager::new();
+
         Ok(NativeDB {
             path,
             wal_path,
@@ -308,6 +328,8 @@ impl NativeDB {
             indexes: Arc::new(PLRwLock::new(HashMap::new())),
             schemas: Arc::new(PLRwLock::new(HashMap::new())),
             transaction_state: Arc::new(Mutex::new(None)),
+            memory_manager: Arc::new(Mutex::new(memory_manager)),
+            write_locks: Arc::new(write_locks),
             options,
         })
     }
@@ -320,12 +342,14 @@ impl NativeDB {
         durability: String,
         wal_batch_size: Option<u32>,
         wal_flush_ms: Option<u32>,
+        lock_timeout_ms: Option<u32>,
     ) -> Result<Self> {
         let options = DBOptions {
             lock_mode: LockMode::from_str(&lock_mode),
             durability: DurabilityMode::from_str(&durability),
             wal_batch_size: wal_batch_size.unwrap_or(1000) as usize,
             wal_flush_ms: wal_flush_ms.unwrap_or(10) as u64,
+            lock_timeout_ms: lock_timeout_ms.unwrap_or(5000) as u64,
         };
         
         Self::new_with_options_internal(path, options)
@@ -1071,6 +1095,7 @@ impl NativeDB {
     }
 
     /// Helper to get arbitrary field value (supports dot notation)
+    #[allow(dead_code)]
     fn get_value_at_field<'a>(&self, item: &'a Value, path: &str) -> Option<&'a Value> {
         let parts: Vec<&str> = path.split('.').collect();
         let mut current = item;
@@ -1149,7 +1174,10 @@ impl NativeDB {
         // Append to WAL first (durability)
         self.append_wal(WalOpType::Set, &path, Some(value.clone()))?;
         
-        // Update memory
+        // v5.5: Acquire stripe lock for this collection (allows concurrent writes to different collections)
+        let _stripe = self.write_locks.lock_for_write(&path);
+        
+        // Update memory (global write lock held for minimal time)
         let mut data = self.data.write();
         Self::set_value_at_path(&mut data, &path, value)?;
         Ok(())
@@ -1169,6 +1197,9 @@ impl NativeDB {
 
         self.append_wal(WalOpType::Delete, &path, None)?;
         
+        // v5.5: Stripe lock for concurrent deletes to different collections
+        let _stripe = self.write_locks.lock_for_write(&path);
+        
         let mut data = self.data.write();
         Self::delete_value_at_path(&mut data, &path)?;
         Ok(())
@@ -1179,9 +1210,466 @@ impl NativeDB {
         // v5.1 Transaction support
         self.record_undo(&path);
 
+        // v5.5: Stripe lock for concurrent pushes to different arrays
+        let _stripe = self.write_locks.lock_for_write(&path);
+        
         let mut data = self.data.write();
         Self::push_value_at_path(&mut data, &path, value)?;
         Ok(())
+    }
+
+    // Memory Management (Cold Storage)
+    #[napi]
+    pub fn offload(&self, path: String) -> Result<String> {
+        // v5.5: Stripe lock for concurrent offload
+        let _stripe = self.write_locks.lock_for_write(&path);
+        
+        let mut data = self.data.write();
+        let ptr = Self::normalize_path(&path);
+        
+        // We need to clone the value to write it, then replace it.
+        // Or better: temporarily replace with Null to take ownership, then write.
+        let val_opt = data.pointer_mut(&ptr).map(|v| std::mem::replace(v, Value::Null));
+        
+        if let Some(val) = val_opt {
+             if val.is_null() { return Ok("".to_string()); } // Already null
+
+             // Generate ID
+             let id = format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+             let cold_path = format!("{}.cold.{}", self.path, id);
+             
+             // Write to disk
+             let json = serde_json::to_string(&val).map_err(|e| Error::from_reason(e.to_string()))?;
+             std::fs::write(&cold_path, json)?;
+             
+             // Replace with pointer
+             let marker = json!({
+                 "__cold__": true,
+                 "id": id
+             });
+             
+             // We just replaced it with Null above, now set the marker
+             if let Some(target) = data.pointer_mut(&ptr) {
+                 *target = marker;
+             }
+             
+             Ok(id)
+        } else {
+             Ok("".to_string())
+        }
+    }
+
+    #[napi]
+    pub fn restore(&self, path: String) -> Result<bool> {
+        // v5.5: Stripe lock for concurrent restore
+        let _stripe = self.write_locks.lock_for_write(&path);
+        
+        let mut data = self.data.write();
+        let ptr = Self::normalize_path(&path);
+        
+        let marker_opt = data.pointer(&ptr).cloned();
+        
+        if let Some(marker) = marker_opt {
+            if let Some(obj) = marker.as_object() {
+                if obj.contains_key("__cold__") {
+                    if let Some(id_val) = obj.get("id") {
+                        if let Some(id) = id_val.as_str() {
+                            let cold_path = format!("{}.cold.{}", self.path, id);
+                            
+                            if std::path::Path::new(&cold_path).exists() {
+                                let content = std::fs::read_to_string(&cold_path)?;
+                                let val: Value = serde_json::from_str(&content).map_err(|e| Error::from_reason(e.to_string()))?;
+                                
+                                // Restore value
+                                if let Some(target) = data.pointer_mut(&ptr) {
+                                    *target = val;
+                                }
+                                
+                                // Clean up cold file
+                                let _ = std::fs::remove_file(cold_path);
+                                return Ok(true);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    // ============================================
+    // v5.5: NATIVE QUERY ENGINE 
+    // ============================================
+
+    /// Execute a full query pipeline entirely in Rust: filter → sort → skip → limit → select
+    /// This is the primary query method — replaces JS-side QueryBuilder processing
+    #[napi]
+    pub fn execute_query(
+        &self,
+        path: String,
+        filters_json: String,     // JSON array of {field, op, value}
+        sort_json: Option<String>, // JSON object like {"age": -1, "name": 1}
+        limit: Option<u32>,
+        skip: Option<u32>,
+        select_fields: Option<Vec<String>>,
+    ) -> Result<Value> {
+        let data = self.data.read();
+        let ptr = Self::normalize_path(&path);
+        
+        let collection = if ptr == "/" || ptr.is_empty() {
+            Some(&*data)
+        } else {
+            data.pointer(&ptr)
+        };
+        
+        let collection = match collection {
+            Some(c) => c,
+            None => return Ok(Value::Array(vec![])),
+        };
+        
+        // Parse filters from JSON
+        let compiled_filters: Vec<CompiledFilter> = if filters_json.is_empty() || filters_json == "[]" {
+            vec![]
+        } else {
+            let raw_filters: Vec<QueryFilter> = serde_json::from_str(&filters_json)
+                .map_err(|e| Error::from_reason(format!("Invalid filters JSON: {}", e)))?;
+            raw_filters.iter()
+                .filter_map(|qf| CompiledFilter::compile(&qf.field, &qf.op, &qf.value))
+                .collect()
+        };
+        
+        // Parse sort specs
+        let sort_specs = match &sort_json {
+            Some(s) if !s.is_empty() && s != "{}" => parse_sort_specs(s),
+            _ => vec![],
+        };
+        
+        // Pre-split select field paths
+        let select_paths: Option<Vec<Vec<String>>> = select_fields.map(|fields| {
+            fields.iter()
+                .map(|f| f.split('.').map(|s| s.to_string()).collect())
+                .collect()
+        });
+        
+        let use_parallel = THREAD_CONFIG.use_parallel;
+        
+        Ok(execute_query(
+            collection,
+            &compiled_filters,
+            &sort_specs,
+            skip.map(|s| s as usize),
+            limit.map(|l| l as usize),
+            &select_paths,
+            use_parallel,
+        ))
+    }
+
+    /// Fast string-based query — returns JSON string instead of Value
+    /// This avoids N-API's recursive Value→JS serialization overhead.
+    /// JS side does a single JSON.parse() which is much faster.
+    #[napi]
+    pub fn execute_query_fast(
+        &self,
+        path: String,
+        filters_json: String,
+        sort_json: Option<String>,
+        limit: Option<u32>,
+        skip: Option<u32>,
+        select_fields: Option<Vec<String>>,
+    ) -> Result<String> {
+        let data = self.data.read();
+        let ptr = Self::normalize_path(&path);
+        
+        let collection = if ptr == "/" || ptr.is_empty() {
+            Some(&*data)
+        } else {
+            data.pointer(&ptr)
+        };
+        
+        let collection = match collection {
+            Some(c) => c,
+            None => return Ok("[]".to_string()),
+        };
+        
+        // Parse filters from JSON
+        let compiled_filters: Vec<CompiledFilter> = if filters_json.is_empty() || filters_json == "[]" {
+            vec![]
+        } else {
+            let raw_filters: Vec<QueryFilter> = serde_json::from_str(&filters_json)
+                .map_err(|e| Error::from_reason(format!("Invalid filters JSON: {}", e)))?;
+            raw_filters.iter()
+                .filter_map(|qf| CompiledFilter::compile(&qf.field, &qf.op, &qf.value))
+                .collect()
+        };
+        
+        let sort_specs = match &sort_json {
+            Some(s) if !s.is_empty() && s != "{}" => parse_sort_specs(s),
+            _ => vec![],
+        };
+        
+        let select_paths: Option<Vec<Vec<String>>> = select_fields.map(|fields| {
+            fields.iter()
+                .map(|f| f.split('.').map(|s| s.to_string()).collect())
+                .collect()
+        });
+        
+        let use_parallel = THREAD_CONFIG.use_parallel;
+        
+        let result = execute_query(
+            collection,
+            &compiled_filters,
+            &sort_specs,
+            skip.map(|s| s as usize),
+            limit.map(|l| l as usize),
+            &select_paths,
+            use_parallel,
+        );
+        
+        // Serialize to JSON string — much faster than N-API recursive Value conversion
+        serde_json::to_string(&result)
+            .map_err(|e| Error::from_reason(format!("Serialization error: {}", e)))
+    }
+
+    /// Fast string-based aggregation — returns JSON string instead of Value
+    #[napi]
+    pub fn execute_aggregate_fast(
+        &self,
+        path: String,
+        filters_json: String,
+        operation: String,
+        field: Option<String>,
+    ) -> Result<String> {
+        let data = self.data.read();
+        let ptr = Self::normalize_path(&path);
+        
+        let collection = if ptr == "/" || ptr.is_empty() {
+            Some(&*data)
+        } else {
+            data.pointer(&ptr)
+        };
+        
+        let collection = match collection {
+            Some(c) => c,
+            None => return Ok("null".to_string()),
+        };
+        
+        let compiled_filters: Vec<CompiledFilter> = if filters_json.is_empty() || filters_json == "[]" {
+            vec![]
+        } else {
+            let raw_filters: Vec<QueryFilter> = serde_json::from_str(&filters_json)
+                .map_err(|e| Error::from_reason(format!("Invalid filters JSON: {}", e)))?;
+            raw_filters.iter()
+                .filter_map(|qf| CompiledFilter::compile(&qf.field, &qf.op, &qf.value))
+                .collect()
+        };
+        
+        let field_segments: Option<Vec<String>> = field.map(|f| {
+            f.split('.').map(|s| s.to_string()).collect()
+        });
+        
+        let use_parallel = THREAD_CONFIG.use_parallel;
+        
+        let result = execute_aggregate(
+            collection,
+            &compiled_filters,
+            &operation,
+            &field_segments,
+            use_parallel,
+        );
+        
+        serde_json::to_string(&result)
+            .map_err(|e| Error::from_reason(format!("Serialization error: {}", e)))
+    }
+
+    /// Execute aggregation with filters entirely in Rust
+    #[napi]
+    pub fn execute_aggregate(
+        &self,
+        path: String,
+        filters_json: String,
+        operation: String,
+        field: Option<String>,
+    ) -> Result<Value> {
+        let data = self.data.read();
+        let ptr = Self::normalize_path(&path);
+        
+        let collection = if ptr == "/" || ptr.is_empty() {
+            Some(&*data)
+        } else {
+            data.pointer(&ptr)
+        };
+        
+        let collection = match collection {
+            Some(c) => c,
+            None => return Ok(Value::Null),
+        };
+        
+        // Parse filters
+        let compiled_filters: Vec<CompiledFilter> = if filters_json.is_empty() || filters_json == "[]" {
+            vec![]
+        } else {
+            let raw_filters: Vec<QueryFilter> = serde_json::from_str(&filters_json)
+                .map_err(|e| Error::from_reason(format!("Invalid filters JSON: {}", e)))?;
+            raw_filters.iter()
+                .filter_map(|qf| CompiledFilter::compile(&qf.field, &qf.op, &qf.value))
+                .collect()
+        };
+        
+        let field_segments: Option<Vec<String>> = field.map(|f| {
+            f.split('.').map(|s| s.to_string()).collect()
+        });
+        
+        let use_parallel = THREAD_CONFIG.use_parallel;
+        
+        Ok(execute_aggregate(
+            collection,
+            &compiled_filters,
+            &operation,
+            &field_segments,
+            use_parallel,
+        ))
+    }
+
+    // ============================================
+    // v5.5: OPTIMIZED ARRAY OPERATIONS 
+    // ============================================
+
+    /// Pull (remove) items from an array — O(N) single pass with HashSet lookup
+    /// Returns the number of items removed
+    #[napi]
+    pub fn pull_items(&self, path: String, items: Vec<Value>) -> Result<u32> {
+        self.record_undo(&path);
+        self.append_wal(WalOpType::Delete, &path, Some(json!({"__pull__": items.clone()})))?;
+        
+        // v5.5: Stripe lock for concurrent array operations
+        let _stripe = self.write_locks.lock_for_write(&path);
+        
+        let mut data = self.data.write();
+        let ptr = Self::normalize_path(&path);
+        
+        if let Some(target) = data.pointer_mut(&ptr) {
+            if let Value::Array(arr) = target {
+                // Build set of serialized items for O(1) lookup
+                let remove_set: std::collections::HashSet<String> = items.iter()
+                    .map(|v| serde_json::to_string(v).unwrap_or_default())
+                    .collect();
+                
+                let before = arr.len();
+                arr.retain(|v| {
+                    !remove_set.contains(&serde_json::to_string(v).unwrap_or_default())
+                });
+                Ok((before - arr.len()) as u32)
+            } else {
+                Err(Error::from_reason("Target is not an array".to_string()))
+            }
+        } else {
+            Err(Error::from_reason("Path does not exist".to_string()))
+        }
+    }
+
+    /// Push multiple items to an array at once — single lock acquisition
+    /// Returns the number of items actually added (skips duplicates)
+    #[napi]
+    pub fn push_batch(&self, path: String, items: Vec<Value>) -> Result<u32> {
+        self.record_undo(&path);
+        
+        // v5.5: Stripe lock for concurrent batch pushes
+        let _stripe = self.write_locks.lock_for_write(&path);
+        
+        let mut data = self.data.write();
+        let ptr = Self::normalize_path(&path);
+        
+        if let Some(target) = data.pointer_mut(&ptr) {
+            if let Value::Array(arr) = target {
+                // Build set of existing serialized items for O(1) dedup
+                let existing: std::collections::HashSet<String> = arr.iter()
+                    .map(|v| serde_json::to_string(v).unwrap_or_default())
+                    .collect();
+                
+                let mut added = 0u32;
+                for item in items {
+                    let key = serde_json::to_string(&item).unwrap_or_default();
+                    if !existing.contains(&key) {
+                        arr.push(item);
+                        added += 1;
+                    }
+                }
+                Ok(added)
+            } else {
+                Err(Error::from_reason("Target is not an array".to_string()))
+            }
+        } else {
+            Err(Error::from_reason("Path does not exist".to_string()))
+        }
+    }
+
+    // ============================================
+    // v5.5: MEMORY MANAGEMENT
+    // ============================================
+
+    /// Configure memory management for smart offloading
+    #[napi]
+    pub fn configure_memory(
+        &self,
+        max_memory: String,       // e.g. "512mb", "1gb", "0" (disabled)
+        cold_storage_dir: Option<String>,
+        eviction_threshold_pct: Option<u32>,
+        eviction_target_pct: Option<u32>,
+    ) -> Result<()> {
+        let max_bytes = parse_memory_limit(&max_memory);
+        let config = MemoryConfig {
+            max_memory_bytes: max_bytes,
+            cold_storage_dir: cold_storage_dir.unwrap_or_default(),
+            check_interval_ms: 5000,
+            eviction_threshold_pct: eviction_threshold_pct.unwrap_or(80) as u8,
+            eviction_target_pct: eviction_target_pct.unwrap_or(60) as u8,
+        };
+        
+        let mut mm = self.memory_manager.lock();
+        *mm = MemoryManager::new(&self.path, config);
+        Ok(())
+    }
+
+    /// Check memory pressure and auto-evict if needed
+    /// Returns list of keys that were evicted
+    #[napi]
+    pub fn check_memory_pressure(&self) -> Result<Vec<String>> {
+        let mut mm = self.memory_manager.lock();
+        if !mm.is_enabled() {
+            return Ok(vec![]);
+        }
+        
+        let mut data = self.data.write();
+        let keys_to_evict = mm.check_pressure(&data);
+        
+        let mut evicted = Vec::new();
+        for key in keys_to_evict {
+            if mm.offload_key(&mut data, &key).is_ok() {
+                evicted.push(key);
+            }
+        }
+        
+        Ok(evicted)
+    }
+
+    /// Get memory statistics
+    #[napi]
+    pub fn memory_stats(&self) -> Result<Value> {
+        let mm = self.memory_manager.lock();
+        let data = self.data.read();
+        drop(mm);
+        
+        let mut mm = self.memory_manager.lock();
+        mm.update_size_estimates(&data);
+        let stats = mm.stats();
+        
+        Ok(json!({
+            "totalEstimatedBytes": stats.total_estimated_bytes,
+            "maxMemoryBytes": stats.max_memory_bytes,
+            "coldKeysCount": stats.cold_keys_count,
+            "hotKeysCount": stats.hot_keys_count,
+            "utilizationPct": stats.utilization_pct,
+        }))
     }
 
     // Indexing API

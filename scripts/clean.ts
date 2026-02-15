@@ -1,4 +1,4 @@
-import { unlinkSync, readdirSync, lstatSync } from "fs";
+import { unlinkSync, readdirSync, lstatSync, rmSync } from "fs";
 import { join } from "path";
 
 const rootFilesToClean = [
@@ -9,9 +9,10 @@ const rootFilesToClean = [
   /^test_crash_recovery\.json.*$/, // test_crash_recovery.json, .wal, etc.
   /\.bak$/,                     // Backup files
   /\.db.*$/,                    // Database-related files
-  /\.json\.wal$/,              // WAL files
-  /\.json\.idx$/,              // Index files
-  /\.json\.lock$/,             // Lock files (only for json databases)
+  /\.wal$/,                     // WAL files
+  /\.idx$/,                     // Index files
+  /^\.node$/,                  // Compiled native modules
+  /^jsondb-high\..*\.node$/,   // Compiled native modules with platform suffix
 ];
 
 const benchmarkFilesToClean = [
@@ -21,6 +22,14 @@ const benchmarkFilesToClean = [
   /\.tmp$/,                     // Temp files
   /\.idx$/,                     // Index files
   /\.lock$/,                    // Lock files
+];
+
+const dirsToClean = [
+  "target",                     // Rust build output
+  "dist",                       // TypeScript build output
+  "build",                      // Build artifacts
+  ".next",                      // Next.js build
+  "node_modules",               // Node modules
 ];
 
 function cleanDir(dir: string, patterns: RegExp[]) {
@@ -44,7 +53,25 @@ function cleanDir(dir: string, patterns: RegExp[]) {
   }
 }
 
+function cleanDirs(dirs: string[]) {
+  for (const dir of dirs) {
+    try {
+      const stats = lstatSync(dir);
+      if (stats.isDirectory()) {
+        rmSync(dir, { recursive: true, force: true });
+        console.log(`  Removed directory: ${dir}`);
+      }
+    } catch (err) {
+      // Directory might not exist or other issues
+    }
+  }
+}
+
+console.log("Cleaning build files and directories...");
+cleanDirs(dirsToClean);
+
 console.log("Cleaning generated files...");
 cleanDir(".", rootFilesToClean);
 cleanDir("benchmarks", benchmarkFilesToClean);
+
 console.log("Cleanup complete!");

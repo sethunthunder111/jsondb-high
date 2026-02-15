@@ -47,48 +47,49 @@ pub struct ProcessLock {
 
 impl ProcessLock {
     /// Try to acquire exclusive lock on database
-    pub fn acquire(db_path: &str) -> Result<Self, LockError> {
+    pub fn acquire(db_path: &str, timeout_ms: u64) -> Result<Self, LockError> {
         let lock_path = format!("{}.process_lock", db_path);
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_millis(timeout_ms);
         
-        // Try to create/open lock file
-        let mut file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(&lock_path)?;
-        
-        // Try non-blocking exclusive lock
-        if !Self::try_lock_exclusive(&file)? {
-            // Check if it's a stale lock
-            if Self::is_stale_lock(&lock_path)? {
-                // Remove stale lock and retry
-                let _ = std::fs::remove_file(&lock_path);
-                file = OpenOptions::new()
-                    .create(true)
-                    .truncate(true)
-                    .read(true)
-                    .write(true)
-                    .open(&lock_path)?;
-                
-                if !Self::try_lock_exclusive(&file)? {
-                    return Err(LockError::AlreadyLocked);
+        loop {
+            // Try to create/open lock file
+            let mut file = OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .read(true)
+                .write(true)
+                .open(&lock_path)?;
+            
+            // Try non-blocking exclusive lock
+            if Self::try_lock_exclusive(&file)? {
+                // Check if it's a stale lock
+                if Self::is_stale_lock(&lock_path)? {
+                    // Remove stale lock and retry immediately
+                    let _ = std::fs::remove_file(&lock_path);
+                    continue;
                 }
-            } else {
+                
+                // We got the lock! Write PID.
+                let pid = std::process::id();
+                file.set_len(0)?;
+                writeln!(file, "{}", pid)?;
+                file.sync_all()?;
+                
+                return Ok(ProcessLock {
+                    lock_file: file,
+                    lock_path,
+                });
+            }
+
+            // Check timeout
+            if start.elapsed() >= timeout {
                 return Err(LockError::AlreadyLocked);
             }
+
+            // Wait a bit before retrying
+            std::thread::sleep(std::time::Duration::from_millis(50));
         }
-        
-        // Write our PID to help with stale lock detection
-        let pid = std::process::id();
-        file.set_len(0)?;
-        writeln!(file, "{}", pid)?;
-        file.sync_all()?;
-        
-        Ok(ProcessLock {
-            lock_file: file,
-            lock_path,
-        })
     }
     
     /// Check if database is locked without acquiring

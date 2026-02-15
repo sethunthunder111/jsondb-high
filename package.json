@@ -1,12 +1,12 @@
 {
   "name": "jsondb-high",
-  "version": "4.5.0",
+  "version": "4.6.0",
   "description": "Blazing fast, Rust-powered in-memory JSON database for Node.js. Features Group Commit WAL, Multi-Process safety, and O(1) indexing. ~2M/s reads, ~260k/s writes.",
-  "main": "index.ts",
+  "main": "index.js",
   "types": "index.d.ts",
   "scripts": {
     "build": "node scripts/build-on-demand.js",
-    "test": "bun tests/database.test.ts && bun tests/subquery.test.ts",
+    "test": "bun tests/database.test.ts && bun tests/subquery.test.ts && bun test tests/cold_storage.test.ts",
     "bench": "bun benchmarks/run.ts",
     "clean": "bun scripts/clean.ts",
     "postinstall": "node scripts/build-on-demand.js"
