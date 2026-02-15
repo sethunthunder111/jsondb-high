@@ -342,7 +342,19 @@ impl NativeDB {
     /// Legacy load (maintained for compatibility)
     #[napi]
     pub fn load(&self) -> Result<()> {
-        // Data is already loaded in constructor
+        let p = PathBuf::from(&self.path);
+        if p.exists() {
+            let contents = fs::read_to_string(&p).map_err(|e| {
+                Error::from_reason(format!("Failed to read database: {}", e))
+            })?;
+
+            let new_data: Value = serde_json::from_str(&contents).map_err(|e| {
+                Error::from_reason(format!("Failed to parse database: {}", e))
+            })?;
+
+            let mut data = self.data.write();
+            *data = new_data;
+        }
         Ok(())
     }
 
@@ -449,32 +461,33 @@ impl NativeDB {
             return Ok(())
         }
         
-        let parts: Vec<&str> = path_str.split('.').collect();
-        if parts.is_empty() { return Ok(()) }
-        
-        let last_part = parts.last().unwrap();
-        let parent_parts = &parts[..parts.len()-1];
+        let mut parts = path_str.split('.');
+        let mut part = match parts.next() {
+            Some(p) => p,
+            None => return Ok(()),
+        };
         
         let mut current = root;
         
-        for (i, part) in parent_parts.iter().enumerate() {
+        for next_part in parts {
+            let is_next_array_idx = next_part.parse::<usize>().is_ok();
+
             if current.is_null() {
                  *current = Value::Object(serde_json::Map::new());
             }
-            let is_array_idx = parts[i+1].parse::<usize>().is_ok(); 
+
             if let Value::Object(map) = current {
-                if !map.contains_key(*part) {
-                    map.insert(part.to_string(), if is_array_idx { json!([]) } else { json!({}) });
+                if !map.contains_key(part) {
+                    map.insert(part.to_string(), if is_next_array_idx { json!([]) } else { json!({}) });
                 }
-                current = map.get_mut(*part).unwrap();
+                current = map.get_mut(part).unwrap();
             } else if let Value::Array(arr) = current {
                  if let Ok(idx) = part.parse::<usize>() {
                      while arr.len() <= idx {
                          arr.push(Value::Null);
                      }
                      if arr[idx].is_null() {
-                          let is_next_array = parts.get(i+1).map(|p| p.parse::<usize>().is_ok()).unwrap_or(false);
-                          arr[idx] = if is_next_array { json!([]) } else { json!({}) };
+                          arr[idx] = if is_next_array_idx { json!([]) } else { json!({}) };
                      }
                      current = &mut arr[idx];
                  } else {
@@ -483,12 +496,14 @@ impl NativeDB {
             } else {
                  return Err(Error::from_reason(format!("Path segment '{}' blocked by primitive", part)));
             }
+
+            part = next_part;
         }
 
         if let Value::Object(map) = current {
-            map.insert(last_part.to_string(), value);
+            map.insert(part.to_string(), value);
         } else if let Value::Array(arr) = current {
-            if let Ok(idx) = last_part.parse::<usize>() {
+            if let Ok(idx) = part.parse::<usize>() {
                 while arr.len() <= idx {
                     arr.push(Value::Null);
                 }
@@ -498,19 +513,19 @@ impl NativeDB {
             }
         } else {
              if current.is_null() {
-                 let is_array = last_part.parse::<usize>().is_ok();
+                 let is_array = part.parse::<usize>().is_ok();
                  if is_array {
-                     let idx = last_part.parse::<usize>().unwrap();
+                     let idx = part.parse::<usize>().unwrap();
                      let mut arr = vec![Value::Null; idx + 1];
                      arr[idx] = value;
                      *current = Value::Array(arr);
                  } else {
                      let mut map = serde_json::Map::new();
-                     map.insert(last_part.to_string(), value);
+                     map.insert(part.to_string(), value);
                      *current = Value::Object(map);
                  }
              } else {
-                  return Err(Error::from_reason(format!("Parent of '{}' is not an object/array", last_part)));
+                  return Err(Error::from_reason(format!("Parent of '{}' is not an object/array", part)));
              }
         }
         Ok(())
