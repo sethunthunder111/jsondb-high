@@ -1,8 +1,4 @@
-//! Process-level file locking for multi-process safety
-//! 
-//! Uses OS-level advisory locks that don't affect in-memory performance.
-//! Lock is only held during file operations, not during get/set.
-
+#![allow(dead_code)]
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -16,7 +12,6 @@ use std::os::windows::io::AsRawHandle;
 pub enum LockError {
     AlreadyLocked,
     Io(std::io::Error),
-    #[allow(dead_code)]
     StaleLock,
 }
 
@@ -38,7 +33,6 @@ impl std::fmt::Display for LockError {
 
 impl std::error::Error for LockError {}
 
-/// Process-level advisory lock
 pub struct ProcessLock {
     #[allow(dead_code)]
     lock_file: File,
@@ -46,14 +40,12 @@ pub struct ProcessLock {
 }
 
 impl ProcessLock {
-    /// Try to acquire exclusive lock on database
     pub fn acquire(db_path: &str, timeout_ms: u64) -> Result<Self, LockError> {
         let lock_path = format!("{}.process_lock", db_path);
         let start = std::time::Instant::now();
         let timeout = std::time::Duration::from_millis(timeout_ms);
         
         loop {
-            // Try to create/open lock file
             let mut file = OpenOptions::new()
                 .create(true)
                 .truncate(false)
@@ -61,9 +53,7 @@ impl ProcessLock {
                 .write(true)
                 .open(&lock_path)?;
             
-            // Try non-blocking exclusive lock
             if Self::try_lock_exclusive(&file)? {
-                // We got the flock! We own this lock now. Write our PID.
                 let pid = std::process::id();
                 file.set_len(0)?;
                 writeln!(file, "{}", pid)?;
@@ -75,26 +65,19 @@ impl ProcessLock {
                 });
             }
 
-            // flock failed - another process holds the lock.
-            // Check if that process is still alive (stale lock detection).
             if Self::is_stale_lock(&lock_path).unwrap_or(false) {
-                // Stale lock: the holding process is dead.
-                // Remove the lock file and retry immediately.
                 let _ = std::fs::remove_file(&lock_path);
                 continue;
             }
 
-            // Check timeout
             if start.elapsed() >= timeout {
                 return Err(LockError::AlreadyLocked);
             }
 
-            // Wait a bit before retrying
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
     }
     
-    /// Check if database is locked without acquiring
     pub fn is_locked(db_path: &str) -> Result<bool, LockError> {
         let lock_path = format!("{}.process_lock", db_path);
         
@@ -102,13 +85,11 @@ impl ProcessLock {
             return Ok(false);
         }
         
-        // Check if lock is stale
         if Self::is_stale_lock(&lock_path)? {
             let _ = std::fs::remove_file(&lock_path);
             return Ok(false);
         }
         
-        // Try to acquire lock to check if it's held
         let file = OpenOptions::new()
             .write(true)
             .open(&lock_path)?;
@@ -116,7 +97,6 @@ impl ProcessLock {
         let can_lock = Self::try_lock_exclusive(&file)?;
         
         if can_lock {
-            // We got the lock, release it immediately
             Self::unlock(&file)?;
             Ok(false)
         } else {
@@ -124,7 +104,6 @@ impl ProcessLock {
         }
     }
     
-    /// Check if a lock file is stale (process no longer exists)
     fn is_stale_lock(lock_path: &str) -> Result<bool, LockError> {
         let mut file = File::open(lock_path)?;
         let mut contents = String::new();
@@ -132,10 +111,9 @@ impl ProcessLock {
         
         let pid: u32 = match contents.trim().parse() {
             Ok(p) => p,
-            Err(_) => return Ok(true), // Invalid PID = stale
+            Err(_) => return Ok(true),
         };
         
-        // Check if process exists (signal 0)
         #[cfg(unix)]
         {
             use libc::{kill, pid_t};
@@ -145,7 +123,6 @@ impl ProcessLock {
             }
         }
         
-        // On non-Unix, we can't easily check, so assume valid
         Ok(false)
     }
     
@@ -168,8 +145,6 @@ impl ProcessLock {
     
     #[cfg(windows)]
     fn try_lock_exclusive(file: &File) -> Result<bool, LockError> {
-        // Windows implementation using LockFile
-        // For now, return true (no locking on Windows)
         Ok(true)
     }
     
@@ -188,20 +163,14 @@ impl ProcessLock {
 
 impl Drop for ProcessLock {
     fn drop(&mut self) {
-        // Lock is released when file is closed
-        // Also remove the lock file
         let _ = std::fs::remove_file(&self.lock_path);
     }
 }
 
-/// Lock mode for database
 #[derive(Clone, Copy, Debug)]
 pub enum LockMode {
-    /// Exclusive lock - prevents other processes
     Exclusive,
-    /// Shared lock - read-only, checks if exclusive exists
     Shared,
-    /// No locking - fastest, single-process only
     None,
 }
 

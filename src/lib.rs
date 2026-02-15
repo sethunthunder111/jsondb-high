@@ -11,13 +11,11 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-// New modules for v4.5
 mod btree;
 mod fs_lock;
 mod schema;
 mod wal;
 
-// v5.5 Enterprise modules
 mod memory_manager;
 mod query_engine;
 mod write_lock;
@@ -87,8 +85,6 @@ use wal::{recover_from_wal, DurabilityMode, GroupCommitWAL, WalConfig, WalOp, Wa
 // THREAD POOL CONFIGURATION
 // ============================================
 
-/// Adaptive thread pool that uses available cores when resources permit
-/// Falls back to single-threaded when system is constrained
 struct ThreadPoolConfig {
     available_cores: usize,
     use_parallel: bool,
@@ -97,8 +93,6 @@ struct ThreadPoolConfig {
 impl ThreadPoolConfig {
     fn new() -> Self {
         let available = num_cpus::get();
-        // Use parallelism only if we have more than 2 cores
-        // and keep 1 core free for the main thread/system
         let use_parallel = available > 2;
 
         ThreadPoolConfig {
@@ -107,13 +101,11 @@ impl ThreadPoolConfig {
         }
     }
 
-    /// Should we use parallel processing for this workload?
     fn should_parallelize(&self, workload_size: usize) -> bool {
         self.use_parallel && workload_size >= 100
     }
 }
 
-// Global thread pool config (initialized once)
 static THREAD_CONFIG: once_cell::sync::Lazy<ThreadPoolConfig> =
     once_cell::sync::Lazy::new(ThreadPoolConfig::new);
 
@@ -139,7 +131,6 @@ fn parse_path<'a>(path: &'a str) -> Vec<PathSegment<'a>> {
 // DATA STRUCTURES
 // ============================================
 
-/// Legacy WAL entry (for backwards compatibility)
 #[derive(Serialize, Deserialize, Debug)]
 struct WalEntry {
     op: String,
@@ -147,16 +138,14 @@ struct WalEntry {
     value: Option<Value>,
 }
 
-/// Query filter for parallel batch queries
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[napi(object)]
 pub struct QueryFilter {
     pub field: String,
-    pub op: String, // "eq", "ne", "gt", "gte", "lt", "lte", "contains", "startswith", "endswith"
+    pub op: String,
     pub value: Value,
 }
 
-/// Batch query request
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[napi(object)]
 pub struct BatchQuery {
@@ -164,7 +153,6 @@ pub struct BatchQuery {
     pub filters: Vec<QueryFilter>,
 }
 
-/// Parallel operation result
 #[derive(Debug)]
 #[napi(object)]
 pub struct ParallelResult {
@@ -173,7 +161,6 @@ pub struct ParallelResult {
     pub error: Option<String>,
 }
 
-/// System resource info
 #[derive(Debug)]
 #[napi(object)]
 pub struct SystemInfo {
@@ -182,7 +169,6 @@ pub struct SystemInfo {
     pub recommended_batch_size: u32,
 }
 
-/// Database options for v4.5
 #[derive(Debug, Clone)]
 pub struct DBOptions {
     pub lock_mode: LockMode,
@@ -199,7 +185,7 @@ impl Default for DBOptions {
             durability: DurabilityMode::Batched,
             wal_batch_size: 1000,
             wal_flush_ms: 10,
-            lock_timeout_ms: 5000, // Default 5s timeout
+            lock_timeout_ms: 5000,
         }
     }
 }
@@ -210,40 +196,31 @@ pub struct NativeDB {
     wal_path: String,
     data: Arc<PLRwLock<Value>>,
 
-    // v4.5: Process-level file locking
     #[allow(dead_code)]
     process_lock: Option<ProcessLock>,
 
-    // v4.5: Group commit WAL (replaces old WAL)
     wal: Option<Arc<GroupCommitWAL>>,
 
-    // v5.1 Persistent Indexes
     indexes: Arc<PLRwLock<HashMap<String, BTreeIndex>>>,
 
-    // v5.1 Schema validation
     schemas: Arc<PLRwLock<HashMap<String, Schema>>>,
 
-    // v5.1 Transactions
     transaction_state: Arc<Mutex<Option<TransactionState>>>,
 
-    // v5.5: Smart Memory Manager
     memory_manager: Arc<Mutex<MemoryManager>>,
 
-    // v5.5: Write concurrency (striped locks)
     write_locks: Arc<StripedLockManager>,
 
-    // Options (kept for future use)
     #[allow(dead_code)]
     options: DBOptions,
 }
 
 #[napi]
 impl NativeDB {
-    /// Legacy constructor for backwards compatibility
     #[napi(constructor)]
     pub fn new(path: String, wal: bool) -> Result<Self> {
         let options = DBOptions {
-            lock_mode: LockMode::None, // Legacy: no locking
+            lock_mode: LockMode::None,
             durability: if wal {
                 DurabilityMode::Batched
             } else {
@@ -257,16 +234,13 @@ impl NativeDB {
         Self::new_with_options_internal(path, options)
     }
 
-    /// Internal constructor with full options
     fn new_with_options_internal(path: String, options: DBOptions) -> Result<Self> {
-        // 1. Acquire process lock if requested
         let process_lock = match options.lock_mode {
             LockMode::Exclusive => match ProcessLock::acquire(&path, options.lock_timeout_ms) {
                 Ok(lock) => Some(lock),
                 Err(e) => return Err(Error::from_reason(format!("Failed to acquire lock: {}", e))),
             },
             LockMode::Shared => {
-                // Check if locked, but don't acquire
                 match ProcessLock::is_locked(&path) {
                     Ok(true) => {
                         return Err(Error::from_reason(
@@ -274,13 +248,12 @@ impl NativeDB {
                         ))
                     }
                     Ok(false) => None,
-                    Err(_) => None, // If we can't check, proceed anyway
+                    Err(_) => None,
                 }
             }
             LockMode::None => None,
         };
 
-        // 2. Initialize WAL if durability enabled
         let wal_path = format!("{}.wal", path);
         let wal = if let Some(config) = options.durability.to_config() {
             let wal_config = WalConfig {
@@ -296,12 +269,10 @@ impl NativeDB {
             None
         };
 
-        // 3. Load existing data or start fresh
         let mut data = json!({});
 
         let p = PathBuf::from(&path);
         if p.exists() {
-            // Load main DB
             let contents = fs::read_to_string(&p)
                 .map_err(|e| Error::from_reason(format!("Failed to read database: {}", e)))?;
 
@@ -309,11 +280,9 @@ impl NativeDB {
                 .map_err(|e| Error::from_reason(format!("Failed to parse database: {}", e)))?;
         }
 
-        // 4. Recover from WAL
         if wal.is_some() {
             let _ = recover_from_wal(&wal_path, &mut data);
         } else {
-            // Legacy WAL recovery
             let legacy_wal = format!("{}.wal", path);
             let wal_p = PathBuf::from(&legacy_wal);
             if wal_p.exists() {
@@ -339,7 +308,6 @@ impl NativeDB {
         })
     }
 
-    /// v4.5: Create database with options from JS
     #[napi(js_name = "newWithOptions")]
     pub fn new_with_options_js(
         path: String,
@@ -360,7 +328,6 @@ impl NativeDB {
         Self::new_with_options_internal(path, options)
     }
 
-    /// Get system resource information for adaptive parallelism
     #[napi]
     pub fn get_system_info(&self) -> SystemInfo {
         SystemInfo {
@@ -374,7 +341,6 @@ impl NativeDB {
         }
     }
 
-    /// v4.5: Explicit sync for durability
     #[napi]
     pub fn sync(&self) -> Result<()> {
         if let Some(ref wal) = self.wal {
@@ -384,7 +350,6 @@ impl NativeDB {
         Ok(())
     }
 
-    /// v4.5: Get current WAL status
     #[napi]
     pub fn wal_status(&self) -> Result<Value> {
         if let Some(ref wal) = self.wal {
@@ -399,7 +364,6 @@ impl NativeDB {
         }
     }
 
-    /// v4.5: Explicitly release resources (locks, WAL handles)
     #[napi]
     pub fn close(&mut self) -> Result<()> {
         self.process_lock.take();
@@ -409,30 +373,22 @@ impl NativeDB {
         Ok(())
     }
 
-    /// Legacy load (maintained for compatibility)
     #[napi]
     pub fn load(&self) -> Result<()> {
         let p = PathBuf::from(&self.path);
 
-        // Try to read directly.
-        // If it fails (Err), we check IF it was "NotFound".
         match fs::read_to_string(&p) {
             Ok(contents) => {
-                // File exists and we read it! Time to parse.
                 let new_data: Value = serde_json::from_str(&contents)
                     .map_err(|e| Error::from_reason(format!("Failed to parse database: {}", e)))?;
 
-                // CRITICAL ZONE: Quick swap
                 let mut data = self.data.write();
                 *data = new_data;
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // File doesn't exist? No problem, just do nothing or init empty.
-                // This is safer than p.exists()!
                 return Ok(());
             }
             Err(e) => {
-                // Genuine error (permission denied, etc.)
                 return Err(Error::from_reason(format!(
                     "Failed to read database: {}",
                     e
@@ -444,7 +400,6 @@ impl NativeDB {
     }
     #[napi]
     pub fn save(&self) -> Result<()> {
-        // Flush WAL first if enabled
         if let Some(ref wal) = self.wal {
             wal.sync()
                 .map_err(|e| Error::from_reason(format!("Failed to flush WAL: {}", e)))?;
@@ -454,20 +409,16 @@ impl NativeDB {
         let json_str = serde_json::to_string_pretty(&*data_guard)
             .map_err(|e| Error::from_reason(e.to_string()))?;
 
-        // Atomic write
         let tmp_path = format!("{}.tmp", self.path);
         let mut file = File::create(&tmp_path)?;
         file.write_all(json_str.as_bytes())?;
         file.sync_all()?;
         fs::rename(tmp_path, &self.path)?;
 
-        // Clear WAL after successful save
         if self.wal.is_some() {
-            // Truncate WAL file
             File::create(&self.wal_path)?;
         }
 
-        // Save indexes
         let mut indexes = self.indexes.write();
         for idx in indexes.values_mut() {
             idx.save()
@@ -477,7 +428,6 @@ impl NativeDB {
         Ok(())
     }
 
-    /// Legacy WAL append (for internal use)
     fn append_wal(&self, op_type: WalOpType, path: &str, value: Option<Value>) -> Result<()> {
         if let Some(ref wal) = self.wal {
             let op = WalOp {
@@ -496,7 +446,6 @@ impl NativeDB {
         Ok(())
     }
 
-    /// Recover from legacy WAL format
     fn recover_legacy_wal(wal_path: &str, data: &mut Value) -> Result<()> {
         let file = File::open(wal_path)?;
         let reader = BufReader::new(file);
@@ -532,7 +481,6 @@ impl NativeDB {
 
 
 
-    /// Zero-allocation path traversal
     #[allow(dead_code)]
     fn get_value_from_root<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
         if path.is_empty() {
@@ -557,7 +505,6 @@ impl NativeDB {
         Some(current)
     }
 
-    /// Helper to convert dot-notation path to JSON pointer (Legacy, kept for compatibility if needed)
     fn normalize_path(path: &str) -> String {
         if path.starts_with('/') {
             path.to_string()
@@ -707,7 +654,6 @@ impl NativeDB {
 
         if let Some(target) = root.pointer_mut(&ptr) {
             if let Value::Array(arr) = target {
-                // Dedupe: check if value exists
                 if !arr.contains(&value) {
                     arr.push(value);
                 }
@@ -724,13 +670,11 @@ impl NativeDB {
     // PARALLEL OPERATIONS
     // ============================================
 
-    /// Execute batch set operations in parallel when beneficial
     #[napi]
     pub fn batch_set_parallel(&self, operations: Vec<(String, Value)>) -> Result<ParallelResult> {
         let count = operations.len();
         let use_parallel = THREAD_CONFIG.should_parallelize(count);
 
-        // Pre-validate paths
         let has_invalid = if use_parallel {
             operations.par_iter().any(|(path, _)| path.is_empty())
         } else {
@@ -745,7 +689,6 @@ impl NativeDB {
             });
         }
 
-        // Apply all operations (requires sequential write lock)
         let mut data = self.data.write();
         let mut success_count = 0u32;
 
@@ -763,7 +706,6 @@ impl NativeDB {
         })
     }
 
-    /// Parallel filter/query on a collection
     #[napi]
     pub fn parallel_query(&self, path: String, filters: Vec<QueryFilter>) -> Result<Value> {
         let data = self.data.read();
@@ -798,7 +740,6 @@ impl NativeDB {
         }
     }
 
-    /// Internal parallel filter implementation
     fn filter_items_parallel(&self, items: &[&Value], filters: &[PreparedFilter]) -> Vec<Value> {
         let count = items.len();
 
@@ -817,7 +758,6 @@ impl NativeDB {
         }
     }
 
-    /// Check if an item matches all filters
     fn matches_filters(&self, item: &Value, filters: &[PreparedFilter]) -> bool {
         for filter in filters {
             if !self.matches_filter(item, filter) {
@@ -827,7 +767,6 @@ impl NativeDB {
         true
     }
 
-    /// Check if an item matches a single filter
     fn matches_filter(&self, item: &Value, filter: &PreparedFilter) -> bool {
         let mut current = item;
 
@@ -946,7 +885,6 @@ impl NativeDB {
         }
     }
 
-    /// Parallel aggregation operations
     #[napi]
     pub fn parallel_aggregate(
         &self,
@@ -1050,7 +988,6 @@ impl NativeDB {
         }
     }
 
-    /// Perform a parallel left outer join between two collections (lookup)
     #[napi]
     pub fn parallel_lookup(
         &self,
@@ -1062,7 +999,6 @@ impl NativeDB {
     ) -> Result<Value> {
         let data = self.data.read();
 
-        // Helper to get collection items
         let get_items = |path: &str| -> Option<Vec<&Value>> {
             let ptr = Self::normalize_path(path);
             let collection = if ptr == "/" || ptr.is_empty() {
@@ -1085,11 +1021,9 @@ impl NativeDB {
             Error::from_reason(format!("Right collection not found: {}", right_path))
         })?;
 
-        // Parse fields
         let left_segments = parse_path(&left_field);
         let right_segments = parse_path(&right_field);
 
-        // Build hash table on right collection
         use std::collections::HashMap;
         let mut hash_table: HashMap<String, Vec<&Value>> = HashMap::new();
 
@@ -1103,7 +1037,6 @@ impl NativeDB {
             }
         }
 
-        // Probe with left collection
         let results: Vec<Value> = if THREAD_CONFIG.should_parallelize(left_items.len()) {
             left_items
                 .par_iter()
@@ -1119,7 +1052,6 @@ impl NativeDB {
         Ok(Value::Array(results))
     }
 
-    /// Helper for parallel_lookup to join a single item
     fn join_item(
         &self,
         left_item: &Value,
@@ -1127,7 +1059,6 @@ impl NativeDB {
         as_field: &str,
         hash_table: &HashMap<String, Vec<&Value>>,
     ) -> Value {
-        // Calculate matches first (read-only)
         let matches_curr =
             if let Some(val) = self.get_value_at_path_segments(left_item, left_segments) {
                 let matches = match val {
@@ -1147,7 +1078,6 @@ impl NativeDB {
                 Vec::new()
             };
 
-        // Clone and modify
         let mut joined = left_item.clone();
         if let Value::Object(ref mut map) = joined {
             map.insert(as_field.to_string(), Value::Array(matches_curr));
@@ -1155,7 +1085,6 @@ impl NativeDB {
         joined
     }
 
-    /// Helper to get arbitrary field value (supports dot notation)
     fn get_value_at_path_segments<'a>(
         &self,
         item: &'a Value,
@@ -1189,7 +1118,6 @@ impl NativeDB {
         Some(current)
     }
 
-    /// Helper to get arbitrary field value (supports dot notation)
     #[allow(dead_code)]
     fn get_value_at_field<'a>(&self, item: &'a Value, path: &str) -> Option<&'a Value> {
         let parts: Vec<&str> = path.split('.').collect();
@@ -1221,7 +1149,6 @@ impl NativeDB {
         Some(current)
     }
 
-    /// Helper to get numeric field value
     fn get_numeric_field(&self, item: &Value, field: &str) -> Option<f64> {
         if field.is_empty() {
             return item.as_f64();
@@ -1277,16 +1204,12 @@ impl NativeDB {
 
     #[napi]
     pub fn set(&self, path: String, value: Value) -> Result<()> {
-        // v5.1 Transaction support
         self.record_undo(&path);
 
-        // Append to WAL first (durability)
         self.append_wal(WalOpType::Set, &path, Some(value.clone()))?;
 
-        // v5.5: Acquire stripe lock for this collection (allows concurrent writes to different collections)
         let _stripe = self.write_locks.lock_for_write(&path);
 
-        // Update memory (global write lock held for minimal time)
         let mut data = self.data.write();
         Self::set_value_at_path(&mut data, &path, value)?;
         Ok(())
@@ -1301,12 +1224,10 @@ impl NativeDB {
 
     #[napi]
     pub fn delete(&self, path: String) -> Result<()> {
-        // v5.1 Transaction support
         self.record_undo(&path);
 
         self.append_wal(WalOpType::Delete, &path, None)?;
 
-        // v5.5: Stripe lock for concurrent deletes to different collections
         let _stripe = self.write_locks.lock_for_write(&path);
 
         let mut data = self.data.write();
@@ -1316,10 +1237,8 @@ impl NativeDB {
 
     #[napi]
     pub fn push(&self, path: String, value: Value) -> Result<()> {
-        // v5.1 Transaction support
         self.record_undo(&path);
 
-        // v5.5: Stripe lock for concurrent pushes to different arrays
         let _stripe = self.write_locks.lock_for_write(&path);
 
         let mut data = self.data.write();
@@ -1327,17 +1246,13 @@ impl NativeDB {
         Ok(())
     }
 
-    // Memory Management (Cold Storage)
     #[napi]
     pub fn offload(&self, path: String) -> Result<String> {
-        // v5.5: Stripe lock for concurrent offload
         let _stripe = self.write_locks.lock_for_write(&path);
 
         let mut data = self.data.write();
         let ptr = Self::normalize_path(&path);
 
-        // We need to clone the value to write it, then replace it.
-        // Or better: temporarily replace with Null to take ownership, then write.
         let val_opt = data
             .pointer_mut(&ptr)
             .map(|v| std::mem::replace(v, Value::Null));
@@ -1345,9 +1260,8 @@ impl NativeDB {
         if let Some(val) = val_opt {
             if val.is_null() {
                 return Ok("".to_string());
-            } // Already null
+            }
 
-            // Generate ID
             let id = format!(
                 "{}",
                 std::time::SystemTime::now()
@@ -1357,18 +1271,15 @@ impl NativeDB {
             );
             let cold_path = format!("{}.cold.{}", self.path, id);
 
-            // Write to disk
             let json =
                 serde_json::to_string(&val).map_err(|e| Error::from_reason(e.to_string()))?;
             std::fs::write(&cold_path, json)?;
 
-            // Replace with pointer
             let marker = json!({
                 "__cold__": true,
                 "id": id
             });
 
-            // We just replaced it with Null above, now set the marker
             if let Some(target) = data.pointer_mut(&ptr) {
                 *target = marker;
             }
@@ -1381,7 +1292,6 @@ impl NativeDB {
 
     #[napi]
     pub fn restore(&self, path: String) -> Result<bool> {
-        // v5.5: Stripe lock for concurrent restore
         let _stripe = self.write_locks.lock_for_write(&path);
 
         let mut data = self.data.write();
@@ -1401,12 +1311,10 @@ impl NativeDB {
                                 let val: Value = serde_json::from_str(&content)
                                     .map_err(|e| Error::from_reason(e.to_string()))?;
 
-                                // Restore value
                                 if let Some(target) = data.pointer_mut(&ptr) {
                                     *target = val;
                                 }
 
-                                // Clean up cold file
                                 let _ = std::fs::remove_file(cold_path);
                                 return Ok(true);
                             }
@@ -1418,18 +1326,12 @@ impl NativeDB {
         Ok(false)
     }
 
-    // ============================================
-    // v5.5: NATIVE QUERY ENGINE
-    // ============================================
-
-    /// Execute a full query pipeline entirely in Rust: filter → sort → skip → limit → select
-    /// This is the primary query method — replaces JS-side QueryBuilder processing
     #[napi]
     pub fn execute_query(
         &self,
         path: String,
-        filters_json: String,      // JSON array of {field, op, value}
-        sort_json: Option<String>, // JSON object like {"age": -1, "name": 1}
+        filters_json: String,
+        sort_json: Option<String>,
         limit: Option<u32>,
         skip: Option<u32>,
         select_fields: Option<Vec<String>>,
@@ -1448,7 +1350,6 @@ impl NativeDB {
             None => return Ok(Value::Array(vec![])),
         };
 
-        // Parse filters from JSON
         let compiled_filters: Vec<CompiledFilter> =
             if filters_json.is_empty() || filters_json == "[]" {
                 vec![]
@@ -1461,13 +1362,11 @@ impl NativeDB {
                     .collect()
             };
 
-        // Parse sort specs
         let sort_specs = match &sort_json {
             Some(s) if !s.is_empty() && s != "{}" => parse_sort_specs(s),
             _ => vec![],
         };
 
-        // Pre-split select field paths
         let select_paths: Option<Vec<Vec<String>>> = select_fields.map(|fields| {
             fields
                 .iter()
@@ -1488,9 +1387,6 @@ impl NativeDB {
         ))
     }
 
-    /// Fast string-based query — returns JSON string instead of Value
-    /// This avoids N-API's recursive Value→JS serialization overhead.
-    /// JS side does a single JSON.parse() which is much faster.
     #[napi]
     pub fn execute_query_fast(
         &self,
@@ -1515,7 +1411,6 @@ impl NativeDB {
             None => return Ok("[]".to_string()),
         };
 
-        // Parse filters from JSON
         let compiled_filters: Vec<CompiledFilter> =
             if filters_json.is_empty() || filters_json == "[]" {
                 vec![]
@@ -1552,12 +1447,10 @@ impl NativeDB {
             use_parallel,
         );
 
-        // Serialize to JSON string — much faster than N-API recursive Value conversion
         serde_json::to_string(&result)
             .map_err(|e| Error::from_reason(format!("Serialization error: {}", e)))
     }
 
-    /// Fast string-based aggregation — returns JSON string instead of Value
     #[napi]
     pub fn execute_aggregate_fast(
         &self,
@@ -1609,7 +1502,6 @@ impl NativeDB {
             .map_err(|e| Error::from_reason(format!("Serialization error: {}", e)))
     }
 
-    /// Execute aggregation with filters entirely in Rust
     #[napi]
     pub fn execute_aggregate(
         &self,
@@ -1632,7 +1524,6 @@ impl NativeDB {
             None => return Ok(Value::Null),
         };
 
-        // Parse filters
         let compiled_filters: Vec<CompiledFilter> =
             if filters_json.is_empty() || filters_json == "[]" {
                 vec![]
@@ -1659,12 +1550,6 @@ impl NativeDB {
         ))
     }
 
-    // ============================================
-    // v5.5: OPTIMIZED ARRAY OPERATIONS
-    // ============================================
-
-    /// Pull (remove) items from an array — O(N) single pass with HashSet lookup
-    /// Returns the number of items removed
     #[napi]
     pub fn pull_items(&self, path: String, items: Vec<Value>) -> Result<u32> {
         self.record_undo(&path);
@@ -1674,7 +1559,6 @@ impl NativeDB {
             Some(json!({"__pull__": items.clone()})),
         )?;
 
-        // v5.5: Stripe lock for concurrent array operations
         let _stripe = self.write_locks.lock_for_write(&path);
 
         let mut data = self.data.write();
@@ -1682,7 +1566,6 @@ impl NativeDB {
 
         if let Some(target) = data.pointer_mut(&ptr) {
             if let Value::Array(arr) = target {
-                // Build set of serialized items for O(1) lookup
                 let remove_set: std::collections::HashSet<String> = items
                     .iter()
                     .map(|v| serde_json::to_string(v).unwrap_or_default())
@@ -1699,13 +1582,10 @@ impl NativeDB {
         }
     }
 
-    /// Push multiple items to an array at once — single lock acquisition
-    /// Returns the number of items actually added (skips duplicates)
     #[napi]
     pub fn push_batch(&self, path: String, items: Vec<Value>) -> Result<u32> {
         self.record_undo(&path);
 
-        // v5.5: Stripe lock for concurrent batch pushes
         let _stripe = self.write_locks.lock_for_write(&path);
 
         let mut data = self.data.write();
@@ -1713,7 +1593,6 @@ impl NativeDB {
 
         if let Some(target) = data.pointer_mut(&ptr) {
             if let Value::Array(arr) = target {
-                // Build set of existing serialized items for O(1) dedup
                 let existing: std::collections::HashSet<String> = arr
                     .iter()
                     .map(|v| serde_json::to_string(v).unwrap_or_default())
@@ -1736,15 +1615,10 @@ impl NativeDB {
         }
     }
 
-    // ============================================
-    // v5.5: MEMORY MANAGEMENT
-    // ============================================
-
-    /// Configure memory management for smart offloading
     #[napi]
     pub fn configure_memory(
         &self,
-        max_memory: String, // e.g. "512mb", "1gb", "0" (disabled)
+        max_memory: String,
         cold_storage_dir: Option<String>,
         eviction_threshold_pct: Option<u32>,
         eviction_target_pct: Option<u32>,
@@ -1763,8 +1637,6 @@ impl NativeDB {
         Ok(())
     }
 
-    /// Check memory pressure and auto-evict if needed
-    /// Returns list of keys that were evicted
     #[napi]
     pub fn check_memory_pressure(&self) -> Result<Vec<String>> {
         let mut mm = self.memory_manager.lock();
@@ -1785,7 +1657,6 @@ impl NativeDB {
         Ok(evicted)
     }
 
-    /// Get memory statistics
     #[napi]
     pub fn memory_stats(&self) -> Result<Value> {
         let mm = self.memory_manager.lock();
@@ -1804,8 +1675,6 @@ impl NativeDB {
             "utilizationPct": stats.utilization_pct,
         }))
     }
-
-    // Indexing API
 
     #[napi]
     pub fn register_index(&self, name: String, field: String) -> Result<()> {
@@ -1872,8 +1741,6 @@ impl NativeDB {
         Ok(vec![])
     }
 
-    // Schema API
-
     #[napi]
     pub fn register_schema(&self, path: String, schema_json: String) -> Result<()> {
         let mut schema: Schema = serde_json::from_str(&schema_json)
@@ -1891,7 +1758,6 @@ impl NativeDB {
     #[napi]
     pub fn validate_path(&self, path: String, value: Value) -> Result<()> {
         let schemas = self.schemas.read();
-        // Find best matching schema (exact or parent)
         let mut parts: Vec<&str> = path.split('.').collect();
         while !parts.is_empty() {
             let current_path = parts.join(".");
@@ -1905,8 +1771,6 @@ impl NativeDB {
         }
         Ok(())
     }
-
-    // Advanced Transactions
 
     #[napi]
     pub fn begin_transaction(&self) -> Result<()> {
@@ -1979,7 +1843,6 @@ impl NativeDB {
         data: &mut Value,
         undo_log: Vec<(String, Option<Value>)>,
     ) -> Result<()> {
-        // Apply in reverse order
         for (path, old_value) in undo_log.into_iter().rev() {
             if let Some(val) = old_value {
                 let _ = Self::set_value_at_path(data, &path, val);

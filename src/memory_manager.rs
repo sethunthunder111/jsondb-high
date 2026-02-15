@@ -1,9 +1,4 @@
 #![allow(dead_code)]
-//! Smart Memory Manager for jsondb-high
-//! 
-//! Provides automatic memory pressure detection and LRU-based cold storage eviction.
-//! Monitors estimated in-memory data size and offloads least-recently-used 
-//! top-level collections to disk when approaching the memory limit.
 
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -11,25 +6,19 @@ use std::fs;
 // use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Configuration for memory management
 #[derive(Debug, Clone)]
 pub struct MemoryConfig {
-    /// Maximum memory in bytes (0 = disabled)
     pub max_memory_bytes: usize,
-    /// Directory for cold storage files
     pub cold_storage_dir: String,
-    /// Check interval in milliseconds
     pub check_interval_ms: u64,
-    /// Eviction threshold percentage (0-100, default 80)
     pub eviction_threshold_pct: u8,
-    /// Target after eviction (percentage, default 60)
     pub eviction_target_pct: u8,
 }
 
 impl Default for MemoryConfig {
     fn default() -> Self {
         MemoryConfig {
-            max_memory_bytes: 0,  // Disabled by default
+            max_memory_bytes: 0,
             cold_storage_dir: String::new(),
             check_interval_ms: 5000,
             eviction_threshold_pct: 80,
@@ -38,18 +27,12 @@ impl Default for MemoryConfig {
     }
 }
 
-/// Tracks access patterns and manages cold storage
 pub struct MemoryManager {
     config: MemoryConfig,
-    /// Top-level key -> last access timestamp (nanos)
     access_tracker: HashMap<String, u64>,
-    /// Currently offloaded paths
     cold_paths: HashSet<String>,
-    /// Estimated size per top-level key (updated periodically)
     size_estimates: HashMap<String, usize>,
-    /// Total estimated size
     total_estimated_size: usize,
-    /// DB file path (for generating cold file paths)
     db_path: String,
 }
 
@@ -61,7 +44,6 @@ impl MemoryManager {
             config.cold_storage_dir.clone()
         };
         
-        // Ensure cold storage directory exists
         if config.max_memory_bytes > 0 {
             let _ = fs::create_dir_all(&cold_dir);
         }
@@ -79,12 +61,10 @@ impl MemoryManager {
         }
     }
     
-    /// Check if memory management is enabled
     pub fn is_enabled(&self) -> bool {
         self.config.max_memory_bytes > 0
     }
     
-    /// Record an access to a path (updates LRU timestamp)
     pub fn track_access(&mut self, path: &str) {
         let top_key = path.split('.').next().unwrap_or(path).to_string();
         let now = SystemTime::now()
@@ -94,18 +74,15 @@ impl MemoryManager {
         self.access_tracker.insert(top_key, now);
     }
     
-    /// Check if a path is currently offloaded
     pub fn is_cold(&self, path: &str) -> bool {
         let top_key = path.split('.').next().unwrap_or(path);
         self.cold_paths.contains(top_key)
     }
     
-    /// Get the cold storage file path for a top-level key
     pub fn cold_file_path(&self, top_key: &str) -> String {
         format!("{}/{}.json", self.config.cold_storage_dir, top_key)
     }
     
-    /// Estimate the memory size of a serde_json::Value
     pub fn estimate_value_size(value: &Value) -> usize {
         match value {
             Value::Null => 8,
@@ -123,7 +100,6 @@ impl MemoryManager {
         }
     }
     
-    /// Update size estimates for all top-level keys
     pub fn update_size_estimates(&mut self, data: &Value) {
         self.size_estimates.clear();
         self.total_estimated_size = 0;
@@ -139,7 +115,6 @@ impl MemoryManager {
         }
     }
     
-    /// Check if we need to evict and return keys to evict (sorted by LRU, coldest first)
     pub fn check_pressure(&mut self, data: &Value) -> Vec<String> {
         if !self.is_enabled() {
             return vec![];
@@ -154,7 +129,6 @@ impl MemoryManager {
             return vec![];
         }
         
-        // Sort keys by access time (oldest first = coldest)
         let mut entries: Vec<(String, u64, usize)> = self.size_estimates.iter()
             .map(|(key, size)| {
                 let access_time = self.access_tracker.get(key).copied().unwrap_or(0);
@@ -178,16 +152,13 @@ impl MemoryManager {
         to_evict
     }
     
-    /// Offload a top-level key's data to disk
     pub fn offload_key(&mut self, data: &mut Value, key: &str) -> Result<(), String> {
         if let Value::Object(map) = data {
             if let Some(value) = map.get(key) {
-                // Don't offload cold markers
                 if is_cold_marker(value) {
                     return Ok(());
                 }
                 
-                // Write to cold storage
                 let cold_path = self.cold_file_path(key);
                 let json = serde_json::to_string(value)
                     .map_err(|e| format!("Serialize error: {}", e))?;
@@ -195,7 +166,6 @@ impl MemoryManager {
                 fs::write(&cold_path, json)
                     .map_err(|e| format!("Write error: {}", e))?;
                 
-                // Replace with cold marker
                 let marker = serde_json::json!({
                     "__cold__": true,
                     "key": key,
@@ -206,21 +176,19 @@ impl MemoryManager {
                 map.insert(key.to_string(), marker);
                 self.cold_paths.insert(key.to_string());
                 
-                // Update size estimate
                 if let Some(size) = self.size_estimates.remove(key) {
                     self.total_estimated_size -= size;
                 }
                 
                 Ok(())
             } else {
-                Ok(()) // Key doesn't exist, nothing to do
+                Ok(())
             }
         } else {
             Err("Data root is not an object".to_string())
         }
     }
     
-    /// Restore a top-level key from cold storage
     pub fn restore_key(&mut self, data: &mut Value, key: &str) -> Result<bool, String> {
         if !self.cold_paths.contains(key) {
             return Ok(false);
@@ -229,7 +197,6 @@ impl MemoryManager {
         let cold_path = self.cold_file_path(key);
         
         if !std::path::Path::new(&cold_path).exists() {
-            // Cold file missing, remove marker
             self.cold_paths.remove(key);
             return Err(format!("Cold storage file missing: {}", cold_path));
         }
@@ -239,7 +206,6 @@ impl MemoryManager {
         let value: Value = serde_json::from_str(&content)
             .map_err(|e| format!("Parse error: {}", e))?;
         
-        // Restore into data
         if let Value::Object(map) = data {
             let size = Self::estimate_value_size(&value);
             map.insert(key.to_string(), value);
@@ -247,10 +213,8 @@ impl MemoryManager {
             self.size_estimates.insert(key.to_string(), size);
             self.total_estimated_size += size;
             
-            // Update access time
             self.track_access(key);
             
-            // Remove cold file
             let _ = fs::remove_file(&cold_path);
             
             Ok(true)
@@ -259,7 +223,6 @@ impl MemoryManager {
         }
     }
     
-    /// Get memory stats
     pub fn stats(&self) -> MemoryStats {
         MemoryStats {
             total_estimated_bytes: self.total_estimated_size,
@@ -274,7 +237,6 @@ impl MemoryManager {
         }
     }
     
-    /// Clean up all cold storage files
     pub fn cleanup(&self) {
         if std::path::Path::new(&self.config.cold_storage_dir).exists() {
             let _ = fs::remove_dir_all(&self.config.cold_storage_dir);
@@ -282,7 +244,6 @@ impl MemoryManager {
     }
 }
 
-/// Check if a value is a cold storage marker
 pub fn is_cold_marker(value: &Value) -> bool {
     if let Value::Object(map) = value {
         map.contains_key("__cold__")
@@ -291,7 +252,6 @@ pub fn is_cold_marker(value: &Value) -> bool {
     }
 }
 
-/// Memory statistics
 #[derive(Debug)]
 pub struct MemoryStats {
     pub total_estimated_bytes: usize,
@@ -301,7 +261,6 @@ pub struct MemoryStats {
     pub utilization_pct: u8,
 }
 
-/// Parse memory limit string like "512mb", "1gb", "256000000"
 pub fn parse_memory_limit(s: &str) -> usize {
     let s = s.trim().to_lowercase();
     if let Ok(n) = s.parse::<usize>() {
@@ -327,5 +286,5 @@ pub fn parse_memory_limit(s: &str) -> usize {
         }
     }
     
-    0 // Disabled
+    0
 }
