@@ -456,6 +456,15 @@ impl NativeDB {
 
     // --- Logic Helpers ---
 
+    /// Helper to convert dot-notation path to JSON pointer
+    fn normalize_path(path: &str) -> String {
+        if path.starts_with('/') {
+            path.to_string()
+        } else {
+            format!("/{}", path.replace(".", "/"))
+        }
+    }
+
     fn set_value_at_path(root: &mut Value, path_str: &str, value: Value) -> Result<()> {
         if path_str.is_empty() {
             *root = value;
@@ -559,7 +568,7 @@ impl NativeDB {
     }
 
     fn push_value_at_path(root: &mut Value, path_str: &str, value: Value) -> Result<()> {
-        let ptr = if path_str.starts_with('/') { path_str.to_string() } else { format!("/{}", path_str.replace(".", "/")) };
+        let ptr = Self::normalize_path(path_str);
         
         if let Some(target) = root.pointer_mut(&ptr) {
             if let Value::Array(arr) = target {
@@ -623,7 +632,7 @@ impl NativeDB {
     #[napi]
     pub fn parallel_query(&self, path: String, filters: Vec<QueryFilter>) -> Result<Value> {
         let data = self.data.read();
-        let ptr = if path.starts_with('/') { path } else { format!("/{}", path.replace(".", "/")) };
+        let ptr = Self::normalize_path(&path);
         
         let collection = if ptr == "/" || ptr.is_empty() {
             Some(&*data)
@@ -801,7 +810,7 @@ impl NativeDB {
     #[napi]
     pub fn parallel_aggregate(&self, path: String, operation: String, field: Option<String>) -> Result<Value> {
         let data = self.data.read();
-        let ptr = if path.starts_with('/') { path } else { format!("/{}", path.replace(".", "/")) };
+        let ptr = Self::normalize_path(&path);
         
         let collection = if ptr == "/" || ptr.is_empty() {
             Some(&*data)
@@ -902,7 +911,7 @@ impl NativeDB {
 
         // Helper to get collection items
         let get_items = |path: &str| -> Option<Vec<&Value>> {
-            let ptr = if path.starts_with('/') { path.to_string() } else { format!("/{}", path.replace(".", "/")) };
+            let ptr = Self::normalize_path(path);
             let collection = if ptr == "/" || ptr.is_empty() {
                 Some(&*data)
             } else {
@@ -1045,7 +1054,7 @@ impl NativeDB {
         if path.is_empty() {
             return Ok(data.clone());
         }
-        let ptr = if path.starts_with('/') { path } else { format!("/{}", path.replace(".", "/")) };
+        let ptr = Self::normalize_path(&path);
         match data.pointer(&ptr) {
             Some(v) => Ok(v.clone()),
             None => Ok(Value::Null), 
@@ -1069,7 +1078,7 @@ impl NativeDB {
     #[napi]
     pub fn has(&self, path: String) -> Result<bool> {
         let data = self.data.read();
-        let ptr = if path.starts_with('/') { path } else { format!("/{}", path.replace(".", "/")) };
+        let ptr = Self::normalize_path(&path);
         Ok(data.pointer(&ptr).is_some())
     }
     
