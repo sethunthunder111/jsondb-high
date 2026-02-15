@@ -342,7 +342,19 @@ impl NativeDB {
     /// Legacy load (maintained for compatibility)
     #[napi]
     pub fn load(&self) -> Result<()> {
-        // Data is already loaded in constructor
+        let p = PathBuf::from(&self.path);
+        if p.exists() {
+             let contents = fs::read_to_string(&p).map_err(|e| {
+                Error::from_reason(format!("Failed to read database: {}", e))
+            })?;
+
+            let new_data: Value = serde_json::from_str(&contents).map_err(|e| {
+                Error::from_reason(format!("Failed to parse database: {}", e))
+            })?;
+
+            let mut data = self.data.write();
+            *data = new_data;
+        }
         Ok(())
     }
 
