@@ -830,6 +830,67 @@ async function runTests() {
     if (bank.alice !== 100 || bank.bob !== 100) throw new Error('Outer rollback failed');
 
     await dbNested.close();
+    // TEST 34: Enhanced TTL Features
+    // ============================================
+    console.log('⏱️  [Test 34] Enhanced TTL Features');
+    const dbTTL = new JSONDatabase(TEST_DB + '_ttl', { wal: false });
+
+    // 1. setTTL on existing key (using fractional seconds for speed)
+    await dbTTL.set('ttl_key', 'value');
+    dbTTL.setTTL('ttl_key', 0.5); // 0.5 seconds
+
+    // Test hasTTL
+    if (!dbTTL.hasTTL('ttl_key')) throw new Error('hasTTL failed - should return true');
+
+    // Test getTTL (might be 0 if < 1s, but setTTL(0.5) sets expiration in future)
+    // getTTL returns seconds (integer), so 0.5s might be floored to 0.
+    // The implementation: Math.floor((expiresAt - Date.now()) / 1000)
+    // So 500ms -> 0.
+    // Let's rely on hasTTL and expiration behavior for short TTLs.
+    // Or set it to 1.5s to test getTTL > 0.
+
+    // Let's use 1.5s for initial setup to verify getTTL works
+    dbTTL.setTTL('ttl_key', 1.5);
+    const initialTTL = await dbTTL.getTTL('ttl_key');
+    console.log('   Initial TTL:', initialTTL);
+    if (initialTTL <= 0) throw new Error('getTTL failed - should be >= 1');
+
+    // 2. Overwrite TTL
+    // Overwrite with shorter TTL to test clear/reset
+    dbTTL.setTTL('ttl_key', 0.5);
+
+    // 3. clearTTL
+    dbTTL.clearTTL('ttl_key');
+    if (dbTTL.hasTTL('ttl_key')) throw new Error('clearTTL failed - should return false');
+
+    // Wait longer than the TTL (0.5s) to ensure it doesn't expire
+    await sleep(800);
+    const valAfterWait = await dbTTL.get('ttl_key');
+    if (valAfterWait !== 'value') throw new Error('Key expired after clearTTL - Timer was not cleared');
+
+    // 4. Expiry callback & Event
+    let expiredPath = '';
+    const expiryPromise = new Promise<void>((resolve) => {
+        dbTTL.on('ttl:expired', ({ path }) => {
+            expiredPath = path;
+            resolve();
+        });
+    });
+
+    await dbTTL.set('ttl_expire_event', 'bye');
+    dbTTL.setTTL('ttl_expire_event', 0.5);
+
+    console.log('   Waiting for expiry event...');
+    await Promise.race([
+        expiryPromise,
+        sleep(1000)
+    ]);
+
+    if (expiredPath !== 'ttl_expire_event') throw new Error('TTL expiry event not fired or wrong path');
+    if (await dbTTL.has('ttl_expire_event')) throw new Error('Key not deleted after TTL expiry');
+
+    await dbTTL.close();
+    if (existsSync(TEST_DB + '_ttl')) unlinkSync(TEST_DB + '_ttl');
     console.log('   ✅ Passed\n');
 
     // Cleanup

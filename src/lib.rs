@@ -584,56 +584,39 @@ impl NativeDB {
     #[napi]
     pub fn batch_set_parallel(&self, operations: Vec<(String, Value)>) -> Result<ParallelResult> {
         let count = operations.len();
-        
-        if THREAD_CONFIG.should_parallelize(count) {
-            // Pre-validate paths in parallel
-            let validation_results: Vec<bool> = operations
-                .par_iter()
-                .map(|(path, _)| !path.is_empty())
-                .collect();
-            
-            if validation_results.iter().any(|&v| !v) {
-                return Ok(ParallelResult {
-                    success: false,
-                    count: 0,
-                    error: Some("Invalid path in batch".to_string()),
-                });
-            }
-            
-            // Apply all operations (requires sequential write lock)
-            let mut data = self.data.write();
-            let mut success_count = 0u32;
-            
-            for (path, value) in operations {
-                let _ = self.append_wal(WalOpType::Set, &path, Some(value.clone()));
-                if Self::set_value_at_path(&mut data, &path, value).is_ok() {
-                    success_count += 1;
-                }
-            }
-            
-            Ok(ParallelResult {
-                success: true,
-                count: success_count,
-                error: None,
-            })
+        let use_parallel = THREAD_CONFIG.should_parallelize(count);
+
+        // Pre-validate paths
+        let has_invalid = if use_parallel {
+            operations.par_iter().any(|(path, _)| path.is_empty())
         } else {
-            // Sequential fallback
-            let mut data = self.data.write();
-            let mut success_count = 0u32;
-            
-            for (path, value) in operations {
-                let _ = self.append_wal(WalOpType::Set, &path, Some(value.clone()));
-                if Self::set_value_at_path(&mut data, &path, value).is_ok() {
-                    success_count += 1;
-                }
-            }
-            
-            Ok(ParallelResult {
-                success: true,
-                count: success_count,
-                error: None,
-            })
+            operations.iter().any(|(path, _)| path.is_empty())
+        };
+
+        if has_invalid {
+            return Ok(ParallelResult {
+                success: false,
+                count: 0,
+                error: Some("Invalid path in batch".to_string()),
+            });
         }
+
+        // Apply all operations (requires sequential write lock)
+        let mut data = self.data.write();
+        let mut success_count = 0u32;
+
+        for (path, value) in operations {
+            let _ = self.append_wal(WalOpType::Set, &path, Some(value.clone()));
+            if Self::set_value_at_path(&mut data, &path, value).is_ok() {
+                success_count += 1;
+            }
+        }
+
+        Ok(ParallelResult {
+            success: true,
+            count: success_count,
+            error: None,
+        })
     }
 
     /// Parallel filter/query on a collection
