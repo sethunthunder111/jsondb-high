@@ -455,7 +455,7 @@ export class WhereClause<T> {
 }
 
 export class QueryBuilder<T = unknown> {
-    private items: T[] | Record<string, T>;
+    private items: T[] | Record<string, T> | null;
     public db: JSONDatabase;
     private _limit?: number;
     private _skip?: number;
@@ -465,11 +465,24 @@ export class QueryBuilder<T = unknown> {
     private queryFilters: QueryFilter[] = [];
     private path: string = '';
 
-    constructor(items: T[] | Record<string, T>, db: JSONDatabase) {
+    constructor(items: T[] | Record<string, T> | null, db: JSONDatabase) {
         this.items = items;
         this.db = db;
     }
     
+    private ensureData(): void {
+        if (this.items !== null) return;
+
+        const data = this.db.getSync(this.path);
+        if (Array.isArray(data)) {
+            this.items = data as T[];
+        } else if (typeof data === 'object' && data !== null) {
+            this.items = data as Record<string, T>;
+        } else {
+            this.items = [];
+        }
+    }
+
     setPath(path: string): QueryBuilder<T> {
         this.path = path;
         return this;
@@ -484,6 +497,8 @@ export class QueryBuilder<T = unknown> {
             throw new Error("Database instance required for join operations");
         }
         
+        this.ensureData();
+
         // 1. Fetch target data
         const targetCollection = (this.db as any).native.get(config.to);
         const targetItems: any[] = Array.isArray(targetCollection) 
@@ -633,6 +648,8 @@ export class QueryBuilder<T = unknown> {
     }
 
 private applyFilters(limit?: number): T[] {
+        this.ensureData();
+
         // 1. Handle Arrays
         if (Array.isArray(this.items)) {
             // Optimization: if no filters & no limit, return copy of original
@@ -710,12 +727,28 @@ private applyFilters(limit?: number): T[] {
         }
 
         if (!usedIndex) {
-            // Optimization: if no sort, pass limit + skip to applyFilters to avoid processing all items
-            let effectiveLimit: number | undefined;
-            if (!this._sortOptions && this._limit !== undefined) {
-                 effectiveLimit = (this._skip || 0) + this._limit;
+            // Optimization: Use native parallel query if possible
+            if (this.items === null && this.queryFilters.length > 0) {
+                 // Native filtering
+                 result = await this.db.parallelQuery<T>(this.path, this.queryFilters);
+
+                 // Apply JS filters if any (including those that generated queryFilters, to be safe)
+                 if (this.filters.length > 0) {
+                     for (const filter of this.filters) {
+                         result = result.filter(filter);
+                     }
+                 }
+            } else {
+                // Fallback: load full data if needed and filter in JS
+                this.ensureData();
+
+                // Optimization: if no sort, pass limit + skip to applyFilters to avoid processing all items
+                let effectiveLimit: number | undefined;
+                if (!this._sortOptions && this._limit !== undefined) {
+                     effectiveLimit = (this._skip || 0) + this._limit;
+                }
+                result = this.applyFilters(effectiveLimit);
             }
-            result = this.applyFilters(effectiveLimit);
         } else {
              // If we used index, we still need to apply other filters
              // Note: the 'eq' filter that used the index is already satisfied, 
@@ -892,8 +925,14 @@ export class JSONDatabase extends EventEmitter {
                 // Write decrypted temporarily for native to load
                 const tempPath = `${this.filePath}.tmp`;
                 writeFileSync(tempPath, decrypted);
+
+                // Re-initialize native DB
+                if (this.native && typeof this.native.close === 'function') {
+                    this.native.close();
+                }
                 this.native = new NativeDb(tempPath, this.wal);
                 this.native.load();
+
                 // Clean up temp file
                 try { require('fs').unlinkSync(tempPath); } catch { /* ignore */ }
             } catch (err) {
@@ -901,7 +940,31 @@ export class JSONDatabase extends EventEmitter {
                 this.native.load();
             }
         } else {
-            this.native.load();
+            // For restoreSnapshot to work, we must reload from disk.
+            // Since native.load() is a no-op in Rust, we explicitly re-create the native instance.
+            // Avoid doing this in constructor if possible, but safe to do idempotent re-creation.
+
+            // Note: If called from constructor, this.native is already created.
+            // If called from restoreSnapshot, we need to refresh it.
+
+            // To differentiate, we could check if we need to reload.
+            // But for simplicity, we just re-create if we can.
+
+            if (this.native && typeof this.native.close === 'function') {
+                this.native.close();
+            }
+
+            if (typeof (NativeDb as any).newWithOptions === 'function') {
+                this.native = (NativeDb as any).newWithOptions(
+                    this.filePath,
+                    this.lockMode,
+                    this.durability,
+                    this.walBatchSize,
+                    this.walFlushMs
+                );
+            } else {
+                this.native = new NativeDb(this.filePath, this.wal);
+            }
         }
     }
 
@@ -1218,6 +1281,15 @@ export class JSONDatabase extends EventEmitter {
         return (val === null || val === undefined ? defaultValue : val) as T;
     }
 
+    /**
+     * Synchronous get for internal use by QueryBuilder
+     * @internal
+     */
+    public getSync<T = unknown>(path: string, defaultValue: T | null = null): T {
+        const val = this.native.get(path);
+        return (val === null || val === undefined ? defaultValue : val) as T;
+    }
+
     public async set(path: string, value: unknown): Promise<void> {
         // Run validation (if native module supports it)
         if (typeof this.native.validatePath === 'function') {
@@ -1315,14 +1387,8 @@ export class JSONDatabase extends EventEmitter {
     // ============================================
 
     public query<T = unknown>(path: string): QueryBuilder<T> {
-        const data = this.native.get(path);
-        let items: T[] | Record<string, T> = [];
-        if (Array.isArray(data)) {
-            items = data as T[];
-        } else if (typeof data === 'object' && data !== null) {
-            items = data as Record<string, T>;
-        }
-        return new QueryBuilder<T>(items, this).setPath(path);
+        // Optimization: Lazy load data only when needed
+        return new QueryBuilder<T>(null, this).setPath(path);
     }
 
     public async find<T = unknown>(
