@@ -757,12 +757,88 @@ async function runTests() {
     if (existsSync(TEST_DB + '.schema.wal')) unlinkSync(TEST_DB + '.schema.wal');
     console.log('   ✅ Passed\n');
 
+    // ============================================
+    // TEST 33: Nested Transactions
+    // ============================================
+    console.log('🔄 [Test 33] Nested Transactions');
+    const dbNested = new JSONDatabase(TEST_DB, { wal: false });
+
+    // Initial state
+    await dbNested.set('bank', { alice: 100, bob: 100, charlie: 100 });
+
+    // Case 1: Both Commit
+    try {
+        await dbNested.transaction(async (tx1) => {
+            await dbNested.set('bank.alice', 90); // -10
+
+            await dbNested.transaction(async (tx2) => {
+                await dbNested.set('bank.bob', 110); // +10
+            });
+        });
+
+        const bank = await dbNested.get<any>('bank');
+        if (bank.alice !== 90 || bank.bob !== 110) throw new Error('Both commit failed');
+    } catch (e) {
+        throw new Error('Nested transaction case 1 failed: ' + e);
+    }
+
+    // Reset
+    await dbNested.set('bank', { alice: 100, bob: 100, charlie: 100 });
+
+    // Case 2: Inner Fails (Rollback Inner, Outer Catches)
+    try {
+        await dbNested.transaction(async (tx1) => {
+            await dbNested.set('bank.alice', 80); // -20
+
+            try {
+                await dbNested.transaction(async (tx2) => {
+                    await dbNested.set('bank.bob', 120); // +20
+                    throw new Error('Inner error');
+                });
+            } catch (e) {
+                // Caught inner error
+            }
+        });
+
+        const bank = await dbNested.get<any>('bank');
+        // Alice should be 80, Bob should be 100 (rolled back)
+        if (bank.alice !== 80 || bank.bob !== 100) throw new Error('Inner rollback failed');
+    } catch (e) {
+        throw new Error('Nested transaction case 2 failed: ' + e);
+    }
+
+    // Reset
+    await dbNested.set('bank', { alice: 100, bob: 100, charlie: 100 });
+
+    // Case 3: Outer Fails (Rollback Everything)
+    try {
+        await dbNested.transaction(async (tx1) => {
+            await dbNested.set('bank.alice', 70); // -30
+
+            await dbNested.transaction(async (tx2) => {
+                await dbNested.set('bank.bob', 130); // +30
+            });
+
+            throw new Error('Outer error');
+        });
+    } catch (e) {
+        // Caught outer error
+    }
+
+    const bank = await dbNested.get<any>('bank');
+    // Everything should be initial state
+    if (bank.alice !== 100 || bank.bob !== 100) throw new Error('Outer rollback failed');
+
+    await dbNested.close();
+    console.log('   ✅ Passed\n');
+
     // Cleanup
     await dbWithIndex.close();
     cleanup();
 
     console.log('\n🎉 === All Tests Passed! ===');
     console.log('\n📋 v4.5 Features Tested:');
+    console.log('   • Nested Transactions');
     console.log('   • WAL Status API');
     console.log('   • Durability Modes (none, batched, sync)');
     console.log('   • Crash Recovery Simulation');
