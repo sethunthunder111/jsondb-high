@@ -15,7 +15,7 @@ pub enum SchemaType {
     Null,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Schema {
     #[serde(rename = "type")]
@@ -36,8 +36,6 @@ pub struct Schema {
     pub exclusive_minimum: Option<f64>,
     pub exclusive_maximum: Option<f64>,
 
-    #[serde(skip)]
-    pub compiled_pattern: Option<Regex>,
     
     // Array constraints
     pub items: Option<Box<Schema>>,
@@ -49,11 +47,34 @@ pub struct Schema {
     pub r#enum: Option<Vec<Value>>,
 }
 
+impl Clone for Schema {
+    fn clone(&self) -> Self {
+        Schema {
+            schema_type: self.schema_type.clone(),
+            properties: self.properties.clone(),
+            required: self.required.clone(),
+            min_length: self.min_length,
+            max_length: self.max_length,
+            pattern: self.pattern.clone(),
+            compiled_pattern: OnceCell::new(),
+            minimum: self.minimum,
+            maximum: self.maximum,
+            exclusive_minimum: self.exclusive_minimum,
+            exclusive_maximum: self.exclusive_maximum,
+            items: self.items.clone(),
+            min_items: self.min_items,
+            max_items: self.max_items,
+            unique_items: self.unique_items,
+            r#enum: self.r#enum.clone(),
+        }
+    }
+}
+
 impl Schema {
     pub fn compile(&mut self) -> Result<(), String> {
         if let Some(pattern_str) = &self.pattern {
             let re = Regex::new(pattern_str).map_err(|e| e.to_string())?;
-            self.compiled_pattern = Some(re);
+            let _ = self.compiled_pattern.set(re);
         }
 
         if let Some(items) = &mut self.items {
@@ -319,9 +340,7 @@ mod tests {
             min_items: None,
             max_items: None,
             unique_items: Some(true),
-            r#enum: None,
-            compiled_pattern: None,
-        };
+            r#enum: None,        };
 
         let valid = json!([1, 2, 3]);
         assert!(validate(&valid, &schema).is_ok());
@@ -348,9 +367,7 @@ mod tests {
             min_items: None,
             max_items: None,
             unique_items: Some(true),
-            r#enum: None,
-            compiled_pattern: None,
-        };
+            r#enum: None,        };
 
         let valid = json!([
             {"a": 1, "b": 2},
@@ -383,9 +400,7 @@ mod tests {
             min_items: None,
             max_items: None,
             unique_items: Some(true),
-            r#enum: None,
-            compiled_pattern: None,
-        };
+            r#enum: None,        };
 
         let valid = json!([
             {"a": {"b": 1}},
@@ -418,9 +433,7 @@ mod tests {
             min_items: None,
             max_items: None,
             unique_items: Some(true),
-            r#enum: None,
-            compiled_pattern: None,
-        };
+            r#enum: None,        };
 
         // 1 and 1.0 are different in to_string() representation, hence unique
         let valid = json!([1, 1.0]);

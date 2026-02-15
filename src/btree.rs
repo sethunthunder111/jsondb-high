@@ -70,7 +70,7 @@ pub struct BTreeIndex {
     name: String,
     field: String,
     // Key (as string representation) -> List of Doc Paths
-    map: BTreeMap<String, BTreeSet<String>>,
+    map: BTreeMap<IndexKey, BTreeSet<String>>,
     // Doc Path -> Key (for O(1) updates/removals)
     reverse_map: BTreeMap<String, IndexKey>,
     path: String,
@@ -103,7 +103,7 @@ impl BTreeIndex {
                 Ok(dto) => {
                     let mut map = BTreeMap::new();
                     for (k, v) in dto.map {
-                        map.insert(k, v);
+                        map.insert(k, v.into_iter().collect());
                     }
 
                     let mut reverse_map = BTreeMap::new();
@@ -147,7 +147,7 @@ impl BTreeIndex {
         let dto = BTreeIndexFile {
             name: self.name.clone(),
             field: self.field.clone(),
-            map: self.map.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            map: self.map.iter().map(|(k, v)| (k.clone(), v.iter().cloned().collect())).collect(),
             reverse_map: self.reverse_map.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         };
 
@@ -216,7 +216,7 @@ impl BTreeIndex {
         }
     }
 
-    pub fn find(&self, key: &Value) -> Option<&Vec<String>> {
+    pub fn find(&self, key: &Value) -> Option<&BTreeSet<String>> {
         let k = self.to_key(key);
         self.map.get(&k)
     }
@@ -228,10 +228,16 @@ impl BTreeIndex {
         let mut results = Vec::new();
         
         use std::ops::Bound;
-        let range = self.map.range((
-            start_k.as_ref().map(|k| Bound::Included(k)).unwrap_or(Bound::Unbounded),
-            end_k.as_ref().map(|k| Bound::Included(k)).unwrap_or(Bound::Unbounded)
-        ));
+        let start_bound: Bound<&IndexKey> = match start_k.as_ref() {
+            Some(k) => Bound::Included(k),
+            None => Bound::Unbounded,
+        };
+        let end_bound: Bound<&IndexKey> = match end_k.as_ref() {
+            Some(k) => Bound::Included(k),
+            None => Bound::Unbounded,
+        };
+        let range = self.map.range((start_bound, end_bound));
+
 
         for (_k, v) in range {
             results.extend(v.iter().cloned());
