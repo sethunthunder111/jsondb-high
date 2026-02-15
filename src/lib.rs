@@ -78,28 +78,6 @@ impl ThreadPoolConfig {
         }
     }
     
-    #[allow(dead_code)]
-    /// Get optimal parallelism level based on workload size and system resources
-    fn optimal_threads(&self, workload_size: usize) -> usize {
-        if !self.use_parallel || workload_size < 100 {
-            // Small workloads don't benefit from parallelism
-            return 1;
-        }
-        
-        // Use cores proportional to workload, but leave 1-2 cores free
-        let max_threads = (self.available_cores - 1).max(1);
-        
-        // Scale threads based on workload
-        // Small: 1 thread, Medium: half cores, Large: max cores
-        if workload_size < 1000 {
-            (max_threads / 2).max(1)
-        } else if workload_size < 10000 {
-            (max_threads * 3 / 4).max(1)
-        } else {
-            max_threads
-        }
-    }
-    
     /// Should we use parallel processing for this workload?
     fn should_parallelize(&self, workload_size: usize) -> bool {
         self.use_parallel && workload_size >= 100
