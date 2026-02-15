@@ -2007,23 +2007,6 @@ export class JSONDatabase extends EventEmitter {
      * ]);
      * ```
      */
-    /**
-     * Execute parallel query with native Rust filtering.
-     * More efficient than JS-based queries for large datasets (≥100 items).
-     * Automatically uses parallel iteration when beneficial.
-     * 
-     * @param path - Path to the collection to query
-     * @param filters - Array of filter conditions to apply
-     * @returns Filtered results array
-     * 
-     * @example
-     * ```typescript
-     * const adults = await db.parallelQuery('users', [
-     *     { field: 'age', op: 'gte', value: 18 },
-     *     { field: 'status', op: 'eq', value: 'active' }
-     * ]);
-     * ```
-     */
     public async parallelQuery<T = unknown>(
         path: string, 
         filters: QueryFilter[]

@@ -68,11 +68,6 @@ if (!existsSync(npmDir)) {
 }
 
 for (const target of targets) {
-  // Extract directory name from package name (remove prefix?)
-  // napi-rs convention: npm/<suffix> e.g. npm/win32-x64-msvc
-  // The suffix is usually the part after the main package name + hyphen
-  // But wait, create-npm-dir generated npm/win32-x64-msvc for jsondb-high-win32-x64-msvc
-  
   const suffix = target.name.replace(PACKAGE_NAME + '-', '');
   const pkgDir = join(npmDir, suffix);
   
