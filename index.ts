@@ -1,5 +1,6 @@
 import { join } from 'path';
 import { existsSync, copyFileSync, writeFileSync, readFileSync } from 'fs';
+import { copyFile } from 'fs/promises';
 import { EventEmitter } from 'events';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
 import { performance } from 'perf_hooks';
@@ -454,7 +455,7 @@ export class WhereClause<T> {
 }
 
 export class QueryBuilder<T = unknown> {
-    private items: T[];
+    private items: T[] | Record<string, T>;
     public db: JSONDatabase;
     private _limit?: number;
     private _skip?: number;
@@ -464,7 +465,7 @@ export class QueryBuilder<T = unknown> {
     private queryFilters: QueryFilter[] = [];
     private path: string = '';
 
-    constructor(items: T[], db: JSONDatabase) {
+    constructor(items: T[] | Record<string, T>, db: JSONDatabase) {
         this.items = items;
         this.db = db;
     }
@@ -477,40 +478,51 @@ export class QueryBuilder<T = unknown> {
     addQueryFilter(f: QueryFilter): void {
         this.queryFilters.push(f);
     }
-
-    join<U>(config: JoinConfig): QueryBuilder<T & { [K in string]: U[] }> {
+  
+  join<U>(config: JoinConfig): QueryBuilder<T & { [K in string]: U[] }> {
         if (!this.db) {
             throw new Error("Database instance required for join operations");
         }
         
-        // Fetch target collection directly from native to avoid async overhead if possible
-        // using (db as any).native access pattern since native is private
+        // 1. Fetch target data
         const targetCollection = (this.db as any).native.get(config.to);
         const targetItems: any[] = Array.isArray(targetCollection) 
             ? targetCollection 
             : Object.values(targetCollection ?? {});
             
-        // Build lookup map (Hash Join)
+        // 2. Build Lookup Map (Hash Join) - O(M)
         const lookup = new Map<string, any[]>();
         for (const item of targetItems) {
-            const key = String(item[config.foreignField]);
+            const rawKey = item[config.foreignField];
+            // FIX: Skip if key is null/undefined to avoid "undefined" == "undefined" matches
+            if (rawKey === undefined || rawKey === null) continue;
+            
+            const key = String(rawKey);
             if (!lookup.has(key)) {
                 lookup.set(key, []);
             }
             lookup.get(key)!.push(item);
         }
         
-        // Perform join
-        this.items = this.items.map(item => {
-            const key = String((item as any)[config.localField]);
-            const matches = lookup.get(key) || [];
+        // 3. Normalize current items to array
+        const currentItems: T[] = Array.isArray(this.items)
+            ? this.items
+            : Object.values(this.items as Record<string, T>);
+
+        // 4. Perform Join - O(N)
+        this.items = currentItems.map(item => {
+            const rawKey = (item as any)[config.localField];
+            // FIX: Handle missing keys safely
+            const key = (rawKey === undefined || rawKey === null) ? null : String(rawKey);
+            
+            const matches = (key !== null) ? (lookup.get(key) || []) : [];
+            
             return {
                 ...item,
                 [config.as]: matches
             };
-        }) as any;
+        }) as any; // Type assertion needed because we are mutating T to T & Joined
         
-        // Return this as filtered/modified query builder
         return this as any;
     }
 
@@ -620,10 +632,57 @@ export class QueryBuilder<T = unknown> {
         return value;
     }
 
-    private applyFilters(): T[] {
-        let result = this.items;
-        for (const filter of this.filters) {
-            result = result.filter(filter);
+private applyFilters(limit?: number): T[] {
+        // 1. Handle Arrays
+        if (Array.isArray(this.items)) {
+            // Optimization: if no filters & no limit, return copy of original
+            if (this.filters.length === 0 && limit === undefined) {
+                 return [...this.items];
+            }
+
+            const result: T[] = [];
+            let count = 0;
+            for (const item of this.items) {
+                let match = true;
+                for (const filter of this.filters) {
+                    if (!filter(item)) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    result.push(item);
+                    count++;
+                    if (limit !== undefined && count >= limit) break;
+                }
+            }
+            return result;
+        }
+
+        // 2. Handle Records (Object maps)
+        const items = this.items as Record<string, T>;
+        if (this.filters.length === 0 && limit === undefined) {
+            return Object.values(items);
+        }
+
+        const result: T[] = [];
+        let count = 0;
+        for (const key in items) {
+            if (Object.prototype.hasOwnProperty.call(items, key)) {
+                const item = items[key];
+                let match = true;
+                for (const filter of this.filters) {
+                    if (!filter(item)) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    result.push(item);
+                    count++;
+                    if (limit !== undefined && count >= limit) break;
+                }
+            }
         }
         return result;
     }
@@ -651,7 +710,12 @@ export class QueryBuilder<T = unknown> {
         }
 
         if (!usedIndex) {
-            result = this.applyFilters();
+            // Optimization: if no sort, pass limit + skip to applyFilters to avoid processing all items
+            let effectiveLimit: number | undefined;
+            if (!this._sortOptions && this._limit !== undefined) {
+                 effectiveLimit = (this._skip || 0) + this._limit;
+            }
+            result = this.applyFilters(effectiveLimit);
         } else {
              // If we used index, we still need to apply other filters
              // Note: the 'eq' filter that used the index is already satisfied, 
@@ -721,12 +785,21 @@ export class QueryBuilder<T = unknown> {
     }
 
     first(): T | undefined {
-        const items = this.applyFilters();
+        // If we are sorting, we MUST get all items first to sort them correctly
+        if (this._sortOptions) {
+            let items = this.applyFilters(); 
+            items = this.applyPostProcessing(items);
+            return items[0];
+        }
+        
+        // Optimization: If NOT sorting, we can just grab the first one directly!
+        const items = this.applyFilters(1);
         return items[0];
     }
 
     last(): T | undefined {
-        const items = this.applyFilters();
+        let items = this.applyFilters();
+        items = this.applyPostProcessing(items);
         return items[items.length - 1];
     }
 }
@@ -1243,11 +1316,11 @@ export class JSONDatabase extends EventEmitter {
 
     public query<T = unknown>(path: string): QueryBuilder<T> {
         const data = this.native.get(path);
-        let items: T[] = [];
+        let items: T[] | Record<string, T> = [];
         if (Array.isArray(data)) {
-            items = [...data] as T[];
+            items = data as T[];
         } else if (typeof data === 'object' && data !== null) {
-            items = Object.values(data) as T[];
+            items = data as Record<string, T>;
         }
         return new QueryBuilder<T>(items, this).setPath(path);
     }
@@ -1446,7 +1519,7 @@ export class JSONDatabase extends EventEmitter {
         await this.save();
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const backupPath = `${this.filePath}.${name}.${timestamp}.bak`;
-        copyFileSync(this.filePath, backupPath);
+        await copyFile(this.filePath, backupPath);
         this.emit('snapshot:created', { path: backupPath, name });
         return backupPath;
     }
