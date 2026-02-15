@@ -43,6 +43,10 @@ pub enum WalCmd {
     Shutdown,
 }
 
+/// Maximum allowed size for a single WAL entry (128 MB)
+/// This prevents OOM attacks from malicious/corrupted WAL files
+const MAX_WAL_ENTRY_SIZE: u32 = 128 * 1024 * 1024;
+
 /// WAL configuration
 #[derive(Clone, Copy)]
 pub struct WalConfig {
@@ -271,6 +275,11 @@ pub fn recover_from_wal(wal_path: &str, data: &mut Value) -> io::Result<u64> {
         let crc = u32::from_le_bytes([header[8], header[9], header[10], header[11]]);
         let len = u32::from_le_bytes([header[12], header[13], header[14], header[15]]);
         
+        if len > MAX_WAL_ENTRY_SIZE {
+            eprintln!("WAL entry too large at LSN {}: {} bytes (max {})", lsn, len, MAX_WAL_ENTRY_SIZE);
+            break;
+        }
+
         // Read data
         let mut data_buf = vec![0u8; len as usize];
         if file.read_exact(&mut data_buf).is_err() {
