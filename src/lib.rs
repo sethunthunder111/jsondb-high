@@ -380,22 +380,34 @@ impl NativeDB {
     /// Legacy load (maintained for compatibility)
     #[napi]
     pub fn load(&self) -> Result<()> {
-        let p = PathBuf::from(&self.path);
-        if p.exists() {
-            let contents = fs::read_to_string(&p).map_err(|e| {
-                Error::from_reason(format!("Failed to read database: {}", e))
-            })?;
-
+    let p = PathBuf::from(&self.path);
+    
+    // Try to read directly.
+    // If it fails (Err), we check IF it was "NotFound".
+    match fs::read_to_string(&p) {
+        Ok(contents) => {
+            // File exists and we read it! Time to parse.
             let new_data: Value = serde_json::from_str(&contents).map_err(|e| {
                 Error::from_reason(format!("Failed to parse database: {}", e))
             })?;
 
+            // CRITICAL ZONE: Quick swap
             let mut data = self.data.write();
             *data = new_data;
         }
-        Ok(())
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // File doesn't exist? No problem, just do nothing or init empty.
+            // This is safer than p.exists()!
+            return Ok(()); 
+        }
+        Err(e) => {
+            // Genuine error (permission denied, etc.)
+            return Err(Error::from_reason(format!("Failed to read database: {}", e)));
+        }
     }
 
+    Ok(())
+}
     #[napi]
     pub fn save(&self) -> Result<()> {
         // Flush WAL first if enabled
