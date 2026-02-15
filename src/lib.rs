@@ -456,6 +456,15 @@ impl NativeDB {
 
     // --- Logic Helpers ---
 
+    /// Helper to convert dot-notation path to JSON pointer
+    fn normalize_path(path: &str) -> String {
+        if path.starts_with('/') {
+            path.to_string()
+        } else {
+            format!("/{}", path.replace(".", "/"))
+        }
+    }
+
     fn set_value_at_path(root: &mut Value, path_str: &str, value: Value) -> Result<()> {
         if path_str.is_empty() {
             *root = value;
@@ -559,7 +568,7 @@ impl NativeDB {
     }
 
     fn push_value_at_path(root: &mut Value, path_str: &str, value: Value) -> Result<()> {
-        let ptr = if path_str.starts_with('/') { path_str.to_string() } else { format!("/{}", path_str.replace(".", "/")) };
+        let ptr = Self::normalize_path(path_str);
         
         if let Some(target) = root.pointer_mut(&ptr) {
             if let Value::Array(arr) = target {
@@ -584,63 +593,46 @@ impl NativeDB {
     #[napi]
     pub fn batch_set_parallel(&self, operations: Vec<(String, Value)>) -> Result<ParallelResult> {
         let count = operations.len();
-        
-        if THREAD_CONFIG.should_parallelize(count) {
-            // Pre-validate paths in parallel
-            let validation_results: Vec<bool> = operations
-                .par_iter()
-                .map(|(path, _)| !path.is_empty())
-                .collect();
-            
-            if validation_results.iter().any(|&v| !v) {
-                return Ok(ParallelResult {
-                    success: false,
-                    count: 0,
-                    error: Some("Invalid path in batch".to_string()),
-                });
-            }
-            
-            // Apply all operations (requires sequential write lock)
-            let mut data = self.data.write();
-            let mut success_count = 0u32;
-            
-            for (path, value) in operations {
-                let _ = self.append_wal(WalOpType::Set, &path, Some(value.clone()));
-                if Self::set_value_at_path(&mut data, &path, value).is_ok() {
-                    success_count += 1;
-                }
-            }
-            
-            Ok(ParallelResult {
-                success: true,
-                count: success_count,
-                error: None,
-            })
+        let use_parallel = THREAD_CONFIG.should_parallelize(count);
+
+        // Pre-validate paths
+        let has_invalid = if use_parallel {
+            operations.par_iter().any(|(path, _)| path.is_empty())
         } else {
-            // Sequential fallback
-            let mut data = self.data.write();
-            let mut success_count = 0u32;
-            
-            for (path, value) in operations {
-                let _ = self.append_wal(WalOpType::Set, &path, Some(value.clone()));
-                if Self::set_value_at_path(&mut data, &path, value).is_ok() {
-                    success_count += 1;
-                }
-            }
-            
-            Ok(ParallelResult {
-                success: true,
-                count: success_count,
-                error: None,
-            })
+            operations.iter().any(|(path, _)| path.is_empty())
+        };
+
+        if has_invalid {
+            return Ok(ParallelResult {
+                success: false,
+                count: 0,
+                error: Some("Invalid path in batch".to_string()),
+            });
         }
+
+        // Apply all operations (requires sequential write lock)
+        let mut data = self.data.write();
+        let mut success_count = 0u32;
+
+        for (path, value) in operations {
+            let _ = self.append_wal(WalOpType::Set, &path, Some(value.clone()));
+            if Self::set_value_at_path(&mut data, &path, value).is_ok() {
+                success_count += 1;
+            }
+        }
+
+        Ok(ParallelResult {
+            success: true,
+            count: success_count,
+            error: None,
+        })
     }
 
     /// Parallel filter/query on a collection
     #[napi]
     pub fn parallel_query(&self, path: String, filters: Vec<QueryFilter>) -> Result<Value> {
         let data = self.data.read();
-        let ptr = if path.starts_with('/') { path } else { format!("/{}", path.replace(".", "/")) };
+        let ptr = Self::normalize_path(&path);
         
         let collection = if ptr == "/" || ptr.is_empty() {
             Some(&*data)
@@ -818,7 +810,7 @@ impl NativeDB {
     #[napi]
     pub fn parallel_aggregate(&self, path: String, operation: String, field: Option<String>) -> Result<Value> {
         let data = self.data.read();
-        let ptr = if path.starts_with('/') { path } else { format!("/{}", path.replace(".", "/")) };
+        let ptr = Self::normalize_path(&path);
         
         let collection = if ptr == "/" || ptr.is_empty() {
             Some(&*data)
@@ -919,7 +911,7 @@ impl NativeDB {
 
         // Helper to get collection items
         let get_items = |path: &str| -> Option<Vec<&Value>> {
-            let ptr = if path.starts_with('/') { path.to_string() } else { format!("/{}", path.replace(".", "/")) };
+            let ptr = Self::normalize_path(path);
             let collection = if ptr == "/" || ptr.is_empty() {
                 Some(&*data)
             } else {
@@ -1062,7 +1054,7 @@ impl NativeDB {
         if path.is_empty() {
             return Ok(data.clone());
         }
-        let ptr = if path.starts_with('/') { path } else { format!("/{}", path.replace(".", "/")) };
+        let ptr = Self::normalize_path(&path);
         match data.pointer(&ptr) {
             Some(v) => Ok(v.clone()),
             None => Ok(Value::Null), 
@@ -1086,7 +1078,7 @@ impl NativeDB {
     #[napi]
     pub fn has(&self, path: String) -> Result<bool> {
         let data = self.data.read();
-        let ptr = if path.starts_with('/') { path } else { format!("/{}", path.replace(".", "/")) };
+        let ptr = Self::normalize_path(&path);
         Ok(data.pointer(&ptr).is_some())
     }
     

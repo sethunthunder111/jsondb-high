@@ -1,5 +1,6 @@
 import { join } from 'path';
 import { existsSync, copyFileSync, writeFileSync, readFileSync } from 'fs';
+import { copyFile } from 'fs/promises';
 import { EventEmitter } from 'events';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
 import { performance } from 'perf_hooks';
@@ -454,7 +455,7 @@ export class WhereClause<T> {
 }
 
 export class QueryBuilder<T = unknown> {
-    private items: T[];
+    private items: T[] | Record<string, T>;
     public db: JSONDatabase;
     private _limit?: number;
     private _skip?: number;
@@ -464,7 +465,7 @@ export class QueryBuilder<T = unknown> {
     private queryFilters: QueryFilter[] = [];
     private path: string = '';
 
-    constructor(items: T[], db: JSONDatabase) {
+    constructor(items: T[] | Record<string, T>, db: JSONDatabase) {
         this.items = items;
         this.db = db;
     }
@@ -501,7 +502,11 @@ export class QueryBuilder<T = unknown> {
         }
         
         // Perform join
-        this.items = this.items.map(item => {
+        const currentItems: T[] = Array.isArray(this.items)
+            ? this.items
+            : Object.values(this.items);
+
+        this.items = currentItems.map(item => {
             const key = String((item as any)[config.localField]);
             const matches = lookup.get(key) || [];
             return {
@@ -621,11 +626,46 @@ export class QueryBuilder<T = unknown> {
     }
 
     private applyFilters(): T[] {
-        let result = this.items;
-        for (const filter of this.filters) {
-            result = result.filter(filter);
+        if (Array.isArray(this.items)) {
+            let result = this.items;
+            for (const filter of this.filters) {
+                result = result.filter(filter);
+            }
+            return result;
+        } else {
+            // It's a Record
+            const data = this.items;
+
+            // Optimization: If no filters, return values.
+            if (this.filters.length === 0) {
+                return Object.values(data);
+            }
+
+            // We have filters.
+            const result: T[] = [];
+            const filters = this.filters;
+            const filterCount = filters.length;
+
+            // Use for...in loop to iterate without full allocation
+            // Combines all filters in one pass
+            for (const key in data) {
+                if (Object.prototype.hasOwnProperty.call(data, key)) {
+                    const item = data[key];
+                    let match = true;
+                    for (let i = 0; i < filterCount; i++) {
+                        if (!filters[i](item)) {
+                            match = false;
+                            break;
+                        }
+                    }
+                    if (match) {
+                        result.push(item);
+                    }
+                }
+            }
+
+            return result;
         }
-        return result;
     }
 
     async exec(): Promise<T[]> {
@@ -721,12 +761,14 @@ export class QueryBuilder<T = unknown> {
     }
 
     first(): T | undefined {
-        const items = this.applyFilters();
+        let items = this.applyFilters();
+        items = this.applyPostProcessing(items);
         return items[0];
     }
 
     last(): T | undefined {
-        const items = this.applyFilters();
+        let items = this.applyFilters();
+        items = this.applyPostProcessing(items);
         return items[items.length - 1];
     }
 }
@@ -1243,11 +1285,11 @@ export class JSONDatabase extends EventEmitter {
 
     public query<T = unknown>(path: string): QueryBuilder<T> {
         const data = this.native.get(path);
-        let items: T[] = [];
+        let items: T[] | Record<string, T> = [];
         if (Array.isArray(data)) {
             items = [...data] as T[];
         } else if (typeof data === 'object' && data !== null) {
-            items = Object.values(data) as T[];
+            items = data as Record<string, T>;
         }
         return new QueryBuilder<T>(items, this).setPath(path);
     }
@@ -1446,7 +1488,7 @@ export class JSONDatabase extends EventEmitter {
         await this.save();
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const backupPath = `${this.filePath}.${name}.${timestamp}.bak`;
-        copyFileSync(this.filePath, backupPath);
+        await copyFile(this.filePath, backupPath);
         this.emit('snapshot:created', { path: backupPath, name });
         return backupPath;
     }

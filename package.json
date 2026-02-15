@@ -6,7 +6,7 @@
   "types": "index.d.ts",
   "scripts": {
     "build": "node scripts/build-on-demand.js",
-    "test": "bun tests/database.test.ts",
+    "test": "bun tests/database.test.ts && bun tests/subquery.test.ts",
     "bench": "bun benchmarks/run.ts",
     "clean": "bun scripts/clean.ts",
     "postinstall": "node scripts/build-on-demand.js"

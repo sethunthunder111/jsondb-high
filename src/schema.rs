@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeSet};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -80,6 +80,90 @@ impl std::fmt::Display for ValidationError {
     }
 }
 
+// Helper struct for comparing Values without full serialization
+#[derive(Eq)]
+struct OrdValue<'a>(&'a Value);
+
+impl<'a> PartialEq for OrdValue<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == std::cmp::Ordering::Equal
+    }
+}
+
+impl<'a> PartialOrd for OrdValue<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a> Ord for OrdValue<'a> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use Value::*;
+        match (self.0, other.0) {
+            (Null, Null) => std::cmp::Ordering::Equal,
+            (Null, _) => std::cmp::Ordering::Less,
+            (_, Null) => std::cmp::Ordering::Greater,
+
+            (Bool(a), Bool(b)) => a.cmp(b),
+            (Bool(_), _) => std::cmp::Ordering::Less,
+            (_, Bool(_)) => std::cmp::Ordering::Greater,
+
+            (Number(a), Number(b)) => {
+                // To maintain backward compatibility with previous implementation which relied on to_string(),
+                // we compare string representations of numbers.
+                // This ensures that 1 and 1.0 are treated as different (legacy behavior),
+                // while avoiding full object serialization for complex structures.
+                a.to_string().cmp(&b.to_string())
+            },
+            (Number(_), _) => std::cmp::Ordering::Less,
+            (_, Number(_)) => std::cmp::Ordering::Greater,
+
+            (String(a), String(b)) => a.cmp(b),
+            (String(_), _) => std::cmp::Ordering::Less,
+            (_, String(_)) => std::cmp::Ordering::Greater,
+
+            (Array(a), Array(b)) => {
+                for (ia, ib) in a.iter().zip(b.iter()) {
+                    let ord = OrdValue(ia).cmp(&OrdValue(ib));
+                    if ord != std::cmp::Ordering::Equal {
+                        return ord;
+                    }
+                }
+                a.len().cmp(&b.len())
+            }
+            (Array(_), _) => std::cmp::Ordering::Less,
+            (_, Array(_)) => std::cmp::Ordering::Greater,
+
+            (Object(a), Object(b)) => {
+                // serde_json::Map is backed by BTreeMap by default (sorted keys)
+                // If "preserve_order" feature is used, it might be IndexMap.
+                // In either case, iterating follows the map's order.
+                // The legacy implementation relied on to_string(), which follows iteration order.
+                // So we iterate and compare.
+                let mut i_a = a.iter();
+                let mut i_b = b.iter();
+                loop {
+                    match (i_a.next(), i_b.next()) {
+                        (Some((ka, va)), Some((kb, vb))) => {
+                            let k_ord = ka.cmp(kb);
+                            if k_ord != std::cmp::Ordering::Equal {
+                                return k_ord;
+                            }
+                            let v_ord = OrdValue(va).cmp(&OrdValue(vb));
+                            if v_ord != std::cmp::Ordering::Equal {
+                                return v_ord;
+                            }
+                        }
+                        (Some(_), None) => return std::cmp::Ordering::Greater,
+                        (None, Some(_)) => return std::cmp::Ordering::Less,
+                        (None, None) => return std::cmp::Ordering::Equal,
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn validate(value: &Value, schema: &Schema) -> Result<(), ValidationError> {
     // 1. Check type
     match (&schema.schema_type, value) {
@@ -149,12 +233,11 @@ pub fn validate(value: &Value, schema: &Schema) -> Result<(), ValidationError> {
                 if arr.len() > max { return Err(ValidationError::MaxItems(max)); }
             }
             if let Some(true) = schema.unique_items {
-                let mut unique = arr.clone();
-                unique.sort_by(|a, b| a.to_string().cmp(&b.to_string())); // Simple unique check
-                let original_len = arr.len();
-                unique.dedup();
-                if unique.len() < original_len {
-                    return Err(ValidationError::UniqueItems);
+                let mut seen = BTreeSet::new();
+                for item in arr {
+                    if !seen.insert(OrdValue(item)) {
+                        return Err(ValidationError::UniqueItems);
+                    }
                 }
             }
             if let Some(item_schema) = &schema.items {
@@ -183,4 +266,128 @@ pub fn validate(value: &Value, schema: &Schema) -> Result<(), ValidationError> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_unique_items_simple() {
+        let schema = Schema {
+            schema_type: SchemaType::Array,
+            properties: None,
+            required: None,
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            minimum: None,
+            maximum: None,
+            exclusive_minimum: None,
+            exclusive_maximum: None,
+            items: None,
+            min_items: None,
+            max_items: None,
+            unique_items: Some(true),
+            r#enum: None,
+        };
+
+        let valid = json!([1, 2, 3]);
+        assert!(validate(&valid, &schema).is_ok());
+
+        let invalid = json!([1, 2, 1]);
+        assert!(validate(&invalid, &schema).is_err());
+    }
+
+    #[test]
+    fn test_unique_items_objects() {
+        let schema = Schema {
+            schema_type: SchemaType::Array,
+            properties: None,
+            required: None,
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            minimum: None,
+            maximum: None,
+            exclusive_minimum: None,
+            exclusive_maximum: None,
+            items: None,
+            min_items: None,
+            max_items: None,
+            unique_items: Some(true),
+            r#enum: None,
+        };
+
+        let valid = json!([
+            {"a": 1, "b": 2},
+            {"a": 1, "b": 3}
+        ]);
+        assert!(validate(&valid, &schema).is_ok());
+
+        let invalid = json!([
+            {"a": 1, "b": 2},
+            {"a": 1, "b": 2}
+        ]);
+        assert!(validate(&invalid, &schema).is_err());
+    }
+
+    #[test]
+    fn test_unique_items_nested() {
+        let schema = Schema {
+            schema_type: SchemaType::Array,
+            properties: None,
+            required: None,
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            minimum: None,
+            maximum: None,
+            exclusive_minimum: None,
+            exclusive_maximum: None,
+            items: None,
+            min_items: None,
+            max_items: None,
+            unique_items: Some(true),
+            r#enum: None,
+        };
+
+        let valid = json!([
+            {"a": {"b": 1}},
+            {"a": {"b": 2}}
+        ]);
+        assert!(validate(&valid, &schema).is_ok());
+
+        let invalid = json!([
+            {"a": {"b": 1}},
+            {"a": {"b": 1}}
+        ]);
+        assert!(validate(&invalid, &schema).is_err());
+    }
+
+    #[test]
+    fn test_unique_items_number_types() {
+        let schema = Schema {
+            schema_type: SchemaType::Array,
+            properties: None,
+            required: None,
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            minimum: None,
+            maximum: None,
+            exclusive_minimum: None,
+            exclusive_maximum: None,
+            items: None,
+            min_items: None,
+            max_items: None,
+            unique_items: Some(true),
+            r#enum: None,
+        };
+
+        // 1 and 1.0 are different in to_string() representation, hence unique
+        let valid = json!([1, 1.0]);
+        assert!(validate(&valid, &schema).is_ok());
+    }
 }

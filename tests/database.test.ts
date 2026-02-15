@@ -784,6 +784,140 @@ async function runTests() {
 
     await dbClear.close();
     if (existsSync(TEST_DB + '.clear')) unlinkSync(TEST_DB + '.clear');
+    // ============================================
+    // TEST 34: Nested Transactions
+    // ============================================
+    console.log('🔄 [Test 34] Nested Transactions');
+    const dbNested = new JSONDatabase(TEST_DB, { wal: false });
+
+    // Initial state
+    await dbNested.set('bank', { alice: 100, bob: 100, charlie: 100 });
+
+    // Case 1: Both Commit
+    try {
+        await dbNested.transaction(async (tx1) => {
+            await dbNested.set('bank.alice', 90); // -10
+
+            await dbNested.transaction(async (tx2) => {
+                await dbNested.set('bank.bob', 110); // +10
+            });
+        });
+
+        const bank = await dbNested.get<any>('bank');
+        if (bank.alice !== 90 || bank.bob !== 110) throw new Error('Both commit failed');
+    } catch (e) {
+        throw new Error('Nested transaction case 1 failed: ' + e);
+    }
+
+    // Reset
+    await dbNested.set('bank', { alice: 100, bob: 100, charlie: 100 });
+
+    // Case 2: Inner Fails (Rollback Inner, Outer Catches)
+    try {
+        await dbNested.transaction(async (tx1) => {
+            await dbNested.set('bank.alice', 80); // -20
+
+            try {
+                await dbNested.transaction(async (tx2) => {
+                    await dbNested.set('bank.bob', 120); // +20
+                    throw new Error('Inner error');
+                });
+            } catch (e) {
+                // Caught inner error
+            }
+        });
+
+        const bank = await dbNested.get<any>('bank');
+        // Alice should be 80, Bob should be 100 (rolled back)
+        if (bank.alice !== 80 || bank.bob !== 100) throw new Error('Inner rollback failed');
+    } catch (e) {
+        throw new Error('Nested transaction case 2 failed: ' + e);
+    }
+
+    // Reset
+    await dbNested.set('bank', { alice: 100, bob: 100, charlie: 100 });
+
+    // Case 3: Outer Fails (Rollback Everything)
+    try {
+        await dbNested.transaction(async (tx1) => {
+            await dbNested.set('bank.alice', 70); // -30
+
+            await dbNested.transaction(async (tx2) => {
+                await dbNested.set('bank.bob', 130); // +30
+            });
+
+            throw new Error('Outer error');
+        });
+    } catch (e) {
+        // Caught outer error
+    }
+
+    const bank = await dbNested.get<any>('bank');
+    // Everything should be initial state
+    if (bank.alice !== 100 || bank.bob !== 100) throw new Error('Outer rollback failed');
+
+    await dbNested.close();
+    // TEST 35: Enhanced TTL Features
+    // ============================================
+    console.log('⏱️  [Test 35] Enhanced TTL Features');
+    const dbTTL = new JSONDatabase(TEST_DB + '_ttl', { wal: false });
+
+    // 1. setTTL on existing key (using fractional seconds for speed)
+    await dbTTL.set('ttl_key', 'value');
+    dbTTL.setTTL('ttl_key', 0.5); // 0.5 seconds
+
+    // Test hasTTL
+    if (!dbTTL.hasTTL('ttl_key')) throw new Error('hasTTL failed - should return true');
+
+    // Test getTTL (might be 0 if < 1s, but setTTL(0.5) sets expiration in future)
+    // getTTL returns seconds (integer), so 0.5s might be floored to 0.
+    // The implementation: Math.floor((expiresAt - Date.now()) / 1000)
+    // So 500ms -> 0.
+    // Let's rely on hasTTL and expiration behavior for short TTLs.
+    // Or set it to 1.5s to test getTTL > 0.
+
+    // Let's use 1.5s for initial setup to verify getTTL works
+    dbTTL.setTTL('ttl_key', 1.5);
+    const initialTTL = await dbTTL.getTTL('ttl_key');
+    console.log('   Initial TTL:', initialTTL);
+    if (initialTTL <= 0) throw new Error('getTTL failed - should be >= 1');
+
+    // 2. Overwrite TTL
+    // Overwrite with shorter TTL to test clear/reset
+    dbTTL.setTTL('ttl_key', 0.5);
+
+    // 3. clearTTL
+    dbTTL.clearTTL('ttl_key');
+    if (dbTTL.hasTTL('ttl_key')) throw new Error('clearTTL failed - should return false');
+
+    // Wait longer than the TTL (0.5s) to ensure it doesn't expire
+    await sleep(800);
+    const valAfterWait = await dbTTL.get('ttl_key');
+    if (valAfterWait !== 'value') throw new Error('Key expired after clearTTL - Timer was not cleared');
+
+    // 4. Expiry callback & Event
+    let expiredPath = '';
+    const expiryPromise = new Promise<void>((resolve) => {
+        dbTTL.on('ttl:expired', ({ path }) => {
+            expiredPath = path;
+            resolve();
+        });
+    });
+
+    await dbTTL.set('ttl_expire_event', 'bye');
+    dbTTL.setTTL('ttl_expire_event', 0.5);
+
+    console.log('   Waiting for expiry event...');
+    await Promise.race([
+        expiryPromise,
+        sleep(1000)
+    ]);
+
+    if (expiredPath !== 'ttl_expire_event') throw new Error('TTL expiry event not fired or wrong path');
+    if (await dbTTL.has('ttl_expire_event')) throw new Error('Key not deleted after TTL expiry');
+
+    await dbTTL.close();
+    if (existsSync(TEST_DB + '_ttl')) unlinkSync(TEST_DB + '_ttl');
     console.log('   ✅ Passed\n');
 
     // Cleanup
@@ -792,6 +926,7 @@ async function runTests() {
 
     console.log('\n🎉 === All Tests Passed! ===');
     console.log('\n📋 v4.5 Features Tested:');
+    console.log('   • Nested Transactions');
     console.log('   • WAL Status API');
     console.log('   • Durability Modes (none, batched, sync)');
     console.log('   • Crash Recovery Simulation');
