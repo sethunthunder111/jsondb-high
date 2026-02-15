@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use regex::Regex;
 use std::collections::{HashMap, BTreeSet};
+use once_cell::sync::OnceCell;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -26,6 +27,8 @@ pub struct Schema {
     pub min_length: Option<usize>,
     pub max_length: Option<usize>,
     pub pattern: Option<String>,
+    #[serde(skip)]
+    pub compiled_pattern: OnceCell<Regex>,
     
     // Number constraints
     pub minimum: Option<f64>,
@@ -203,7 +206,9 @@ pub fn validate(value: &Value, schema: &Schema) -> Result<(), ValidationError> {
                 if s.len() > max { return Err(ValidationError::MaxLength(max)); }
             }
             if let Some(pattern_str) = &schema.pattern {
-                let re = Regex::new(pattern_str).map_err(|_| ValidationError::PatternMismatch(pattern_str.clone()))?;
+                let re = schema.compiled_pattern.get_or_try_init(|| {
+                    Regex::new(pattern_str).map_err(|_| ValidationError::PatternMismatch(pattern_str.clone()))
+                })?;
                 if !re.is_match(s) {
                     return Err(ValidationError::PatternMismatch(pattern_str.clone()));
                 }
@@ -282,6 +287,7 @@ mod tests {
             min_length: None,
             max_length: None,
             pattern: None,
+            compiled_pattern: OnceCell::new(),
             minimum: None,
             maximum: None,
             exclusive_minimum: None,
@@ -309,6 +315,7 @@ mod tests {
             min_length: None,
             max_length: None,
             pattern: None,
+            compiled_pattern: OnceCell::new(),
             minimum: None,
             maximum: None,
             exclusive_minimum: None,
@@ -342,6 +349,7 @@ mod tests {
             min_length: None,
             max_length: None,
             pattern: None,
+            compiled_pattern: OnceCell::new(),
             minimum: None,
             maximum: None,
             exclusive_minimum: None,
@@ -375,6 +383,7 @@ mod tests {
             min_length: None,
             max_length: None,
             pattern: None,
+            compiled_pattern: OnceCell::new(),
             minimum: None,
             maximum: None,
             exclusive_minimum: None,
