@@ -21,6 +21,13 @@ use btree::BTreeIndex;
 use schema::{Schema, validate};
 use std::collections::HashMap;
 use parking_lot::Mutex;
+use lru::LruCache;
+use std::num::NonZeroUsize;
+
+static REGEX_CACHE: once_cell::sync::Lazy<Mutex<LruCache<String, regex::Regex>>> =
+    once_cell::sync::Lazy::new(|| {
+        Mutex::new(LruCache::new(NonZeroUsize::new(100).unwrap()))
+    });
 
 struct TransactionState {
     undo_log: Vec<(String, Option<Value>)>,
@@ -37,7 +44,20 @@ struct PreparedFilter {
 impl PreparedFilter {
     fn from_query_filter(qf: &QueryFilter) -> Self {
         let regex = if qf.op == "regex" {
-            qf.value.as_str().and_then(|p| regex::Regex::new(p).ok())
+            qf.value.as_str().and_then(|p| {
+                let mut cache = REGEX_CACHE.lock();
+                if let Some(re) = cache.get(p) {
+                    Some(re.clone())
+                } else {
+                    match regex::Regex::new(p) {
+                        Ok(re) => {
+                            cache.push(p.to_string(), re.clone());
+                            Some(re)
+                        }
+                        Err(_) => None,
+                    }
+                }
+            })
         } else {
             None
         };
@@ -342,7 +362,19 @@ impl NativeDB {
     /// Legacy load (maintained for compatibility)
     #[napi]
     pub fn load(&self) -> Result<()> {
-        // Data is already loaded in constructor
+        let p = PathBuf::from(&self.path);
+        if p.exists() {
+            let contents = fs::read_to_string(&p).map_err(|e| {
+                Error::from_reason(format!("Failed to read database: {}", e))
+            })?;
+
+            let new_data: Value = serde_json::from_str(&contents).map_err(|e| {
+                Error::from_reason(format!("Failed to parse database: {}", e))
+            })?;
+
+            let mut data = self.data.write();
+            *data = new_data;
+        }
         Ok(())
     }
 
