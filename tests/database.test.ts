@@ -757,6 +757,35 @@ async function runTests() {
     if (existsSync(TEST_DB + '.schema.wal')) unlinkSync(TEST_DB + '.schema.wal');
     console.log('   ✅ Passed\n');
 
+
+    // ============================================
+    // TEST 33: Clear Data
+    // ============================================
+    console.log('🧹 [Test 33] Clear Data');
+    const dbClear = new JSONDatabase(TEST_DB + '.clear', { wal: false });
+    await dbClear.set('user.name', 'Alice');
+    await dbClear.set('config', { theme: 'dark' });
+
+    // Verify data exists
+    const dataBeforeClear = await dbClear.get('');
+    if (Object.keys(dataBeforeClear as object).length === 0) {
+        throw new Error('Data should not be empty before clear');
+    }
+
+    // Clear data
+    await dbClear.clear();
+
+    // Verify data is empty
+    const dataAfterClear = await dbClear.get('');
+    console.log('   Data after clear:', dataAfterClear);
+    if (Object.keys(dataAfterClear as object).length !== 0) {
+        throw new Error('Data should be empty after clear');
+    }
+
+    await dbClear.close();
+    if (existsSync(TEST_DB + '.clear')) unlinkSync(TEST_DB + '.clear');
+    console.log('   ✅ Passed\n');
+
     // Cleanup
     await dbWithIndex.close();
     cleanup();
