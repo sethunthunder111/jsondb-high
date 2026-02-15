@@ -721,12 +721,14 @@ export class QueryBuilder<T = unknown> {
     }
 
     first(): T | undefined {
-        const items = this.applyFilters();
+        let items = this.applyFilters();
+        items = this.applyPostProcessing(items);
         return items[0];
     }
 
     last(): T | undefined {
-        const items = this.applyFilters();
+        let items = this.applyFilters();
+        items = this.applyPostProcessing(items);
         return items[items.length - 1];
     }
 }

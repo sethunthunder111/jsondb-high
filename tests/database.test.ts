@@ -757,6 +757,103 @@ async function runTests() {
     if (existsSync(TEST_DB + '.schema.wal')) unlinkSync(TEST_DB + '.schema.wal');
     console.log('   ✅ Passed\n');
 
+    // ============================================
+    // TEST 33: QueryBuilder First/Last
+    // ============================================
+    console.log('🥇 [Test 33] QueryBuilder First/Last');
+    const dbFirstLast = new JSONDatabase(TEST_DB, { durability: 'none' });
+
+    // Create data
+    await dbFirstLast.set('numbers', [10, 20, 30, 40, 50]);
+
+    // Basic access (no sort/filter)
+    const firstBasic = dbFirstLast.query<number>('numbers').first();
+    const lastBasic = dbFirstLast.query<number>('numbers').last();
+    console.log('   Basic First:', firstBasic);
+    console.log('   Basic Last:', lastBasic);
+
+    if (firstBasic !== 10) throw new Error('Basic first() failed');
+    if (lastBasic !== 50) throw new Error('Basic last() failed');
+
+    // With Sort & Filter
+    // Using objects for reliable sorting test as per my analysis
+    await dbFirstLast.set('users_rank', [
+        { rank: 3, name: 'C' },
+        { rank: 1, name: 'A' },
+        { rank: 5, name: 'E' },
+        { rank: 2, name: 'B' },
+        { rank: 4, name: 'D' }
+    ]);
+
+    interface RankUser { rank: number; name: string; }
+
+    // first() with sort (should be A, rank 1)
+    const firstRank = dbFirstLast.query<RankUser>('users_rank')
+        .sort({ rank: 1 })
+        .first();
+
+    // last() with sort (should be E, rank 5)
+    const lastRank = dbFirstLast.query<RankUser>('users_rank')
+        .sort({ rank: 1 })
+        .last();
+
+    console.log('   Sorted First:', firstRank);
+    console.log('   Sorted Last:', lastRank);
+
+    if (firstRank?.rank !== 1) throw new Error('first() with sort failed: expected rank 1, got ' + firstRank?.rank);
+    if (lastRank?.rank !== 5) throw new Error('last() with sort failed: expected rank 5, got ' + lastRank?.rank);
+
+    // With Filter + Sort
+    // Filter: rank > 2 (C, D, E) -> Sorted asc: C(3), D(4), E(5)
+    // First should be C, Last should be E
+    const firstFiltered = dbFirstLast.query<RankUser>('users_rank')
+        .where('rank').gt(2)
+        .sort({ rank: 1 })
+        .first();
+
+    const lastFiltered = dbFirstLast.query<RankUser>('users_rank')
+        .where('rank').gt(2)
+        .sort({ rank: 1 })
+        .last();
+
+    console.log('   Filtered First:', firstFiltered);
+    console.log('   Filtered Last:', lastFiltered);
+
+    if (firstFiltered?.rank !== 3) throw new Error('first() with filter+sort failed');
+    if (lastFiltered?.rank !== 5) throw new Error('last() with filter+sort failed');
+
+    // With Skip/Limit
+    // Sorted: A(1), B(2), C(3), D(4), E(5)
+    // Skip 1, Limit 2 -> B(2), C(3)
+    // First -> B, Last -> C
+    const firstPaged = dbFirstLast.query<RankUser>('users_rank')
+        .sort({ rank: 1 })
+        .skip(1)
+        .limit(2)
+        .first();
+
+    const lastPaged = dbFirstLast.query<RankUser>('users_rank')
+        .sort({ rank: 1 })
+        .skip(1)
+        .limit(2)
+        .last();
+
+    console.log('   Paged First:', firstPaged);
+    console.log('   Paged Last:', lastPaged);
+
+    if (firstPaged?.rank !== 2) throw new Error('first() with skip/limit failed');
+    if (lastPaged?.rank !== 3) throw new Error('last() with skip/limit failed');
+
+    // Empty result
+    const emptyFirst = dbFirstLast.query<RankUser>('users_rank')
+        .where('rank').gt(100)
+        .first();
+
+    if (emptyFirst !== undefined) throw new Error('first() should return undefined for empty result');
+
+    await dbFirstLast.close();
+    console.log('   ✅ Passed\n');
+
     // Cleanup
     await dbWithIndex.close();
     cleanup();
