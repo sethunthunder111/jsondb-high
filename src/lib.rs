@@ -1144,7 +1144,7 @@ impl NativeDB {
         let indexes = self.indexes.read();
         if let Some(idx) = indexes.get(&name) {
             if let Some(paths) = idx.find(&key) {
-                return Ok(paths.clone());
+                return Ok(paths.iter().cloned().collect());
             }
         }
         Ok(vec![])

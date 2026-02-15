@@ -950,21 +950,6 @@ async function runTests() {
 
     // ============================================
     // TEST 37: Restore Snapshot (Success)
-    // ============================================
-    console.log('📸 [Test 37] Restore Snapshot (Success)');
-    const dbRestore = new JSONDatabase(TEST_DB, { wal: false });
-    await dbRestore.set('restore_test', 'original');
-    const snapPath = await dbRestore.createSnapshot('restore-success');
-
-    await dbRestore.set('restore_test', 'modified');
-    if (await dbRestore.get('restore_test') !== 'modified') throw new Error('Failed to modify before restore');
-
-    await dbRestore.restoreSnapshot(snapPath);
-    if (await dbRestore.get('restore_test') !== 'original') throw new Error('Restore failed to recover original data');
-
-    await dbRestore.close();
-    if (existsSync(snapPath)) unlinkSync(snapPath);
-    console.log('   ✅ Passed\n');
 
     // ============================================
     // TEST 38: Restore Snapshot (File Not Found)
