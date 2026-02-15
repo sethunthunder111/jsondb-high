@@ -2,33 +2,61 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-function getNativeName() {
-  const { platform, arch } = process;
-  let osName = platform;
-  let archName = arch;
-  let abi = '';
-
-  if (platform === 'win32') {
-    osName = 'win32';
-    abi = '-msvc';
-  } else if (platform === 'darwin') {
-    osName = 'darwin';
-  } else if (platform === 'linux') {
-    osName = 'linux';
-    // Simplified musl check
+function isMusl() {
+  if (!process.report || typeof process.report.getReport !== 'function') {
     try {
-      const lddOutput = execSync('ldd --version', { stdio: 'pipe' }).toString();
-      if (lddOutput.includes('musl')) {
-        abi = '-musl';
-      } else {
-        abi = '-gnu';
-      }
+      const lddPath = execSync('which ldd').toString().trim();
+      return fs.readFileSync(lddPath, 'utf8').includes('musl');
     } catch (e) {
-      abi = '-gnu';
+      return true;
     }
+  } else {
+    const { glibcVersionRuntime } = process.report.getReport().header;
+    return !glibcVersionRuntime;
   }
+}
 
-  return `jsondb-high.${osName}-${archName}${abi}.node`;
+function getPlatformTriple() {
+  const { platform, arch } = process;
+
+  switch (platform) {
+    case 'android':
+      // android-arm64, android-arm-eabi
+      if (arch === 'arm') return 'android-arm-eabi';
+      return `android-${arch}`;
+
+    case 'win32':
+      // win32-x64-msvc, win32-ia32-msvc, win32-arm64-msvc
+      return `win32-${arch}-msvc`;
+
+    case 'darwin':
+      // darwin-x64, darwin-arm64
+      return `darwin-${arch}`;
+
+    case 'freebsd':
+      // freebsd-x64
+      return `freebsd-${arch}`;
+
+    case 'linux': {
+      const musl = isMusl();
+      if (arch === 'arm') {
+        // linux-arm-gnueabihf, linux-arm-musleabihf
+        return musl ? 'linux-arm-musleabihf' : 'linux-arm-gnueabihf';
+      }
+      // linux-x64-gnu, linux-x64-musl, linux-arm64-gnu, linux-arm64-musl,
+      // linux-riscv64-gnu, linux-riscv64-musl, linux-s390x-gnu
+      return `linux-${arch}-${musl ? 'musl' : 'gnu'}`;
+    }
+
+    default:
+      // Fallback
+      return `${platform}-${arch}`;
+  }
+}
+
+// Name that the NAPI-RS loader (index.js) expects for local resolution
+function getNativeName() {
+  return `index.${getPlatformTriple()}.node`;
 }
 
 function buildOnDemand() {

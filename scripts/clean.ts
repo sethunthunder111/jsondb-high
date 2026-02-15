@@ -7,12 +7,17 @@ const rootFilesToClean = [
   /^test_lock\.json.*$/,        // test_lock.json, .wal, etc.
   /^test_durability\.json.*$/,  // test_durability.json, .wal, etc.
   /^test_crash_recovery\.json.*$/, // test_crash_recovery.json, .wal, etc.
+  /^test_cold\.json.*$/,        // test_cold.json, .wal, etc.
+  /^bench_.*\.json.*$/,         // bench_btree.json, bench_db.json, etc.
+  /^repro_.*\.ts$/,             // Temporary reproduction scripts
   /\.bak$/,                     // Backup files
   /\.db.*$/,                    // Database-related files
   /\.wal$/,                     // WAL files
   /\.idx$/,                     // Index files
-  /^\.node$/,                  // Compiled native modules
-  /^jsondb-high\..*\.node$/,   // Compiled native modules with platform suffix
+  /\.process_lock$/,            // Process lock files
+  /\.cold\./,                   // Cold storage files
+  /\.node$/,                    // Compiled native modules (any .node file)
+  /^jsondb-high\..*\.node$/,    // Compiled native modules with platform suffix
 ];
 
 const benchmarkFilesToClean = [
@@ -29,7 +34,6 @@ const dirsToClean = [
   "dist",                       // TypeScript build output
   "build",                      // Build artifacts
   ".next",                      // Next.js build
-  "node_modules",               // Node modules
 ];
 
 function cleanDir(dir: string, patterns: RegExp[]) {

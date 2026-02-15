@@ -2,40 +2,38 @@
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use parking_lot::RwLock as PLRwLock;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
-use parking_lot::RwLock as PLRwLock;
-use rayon::prelude::*;
 
 // New modules for v4.5
-mod fs_lock;
-mod wal;
 mod btree;
+mod fs_lock;
 mod schema;
+mod wal;
 
 // v5.5 Enterprise modules
-mod query_engine;
 mod memory_manager;
+mod query_engine;
 mod write_lock;
 
 use btree::BTreeIndex;
-use schema::{Schema, validate};
-use query_engine::{CompiledFilter, execute_query, execute_aggregate, parse_sort_specs};
-use memory_manager::{MemoryManager, MemoryConfig, parse_memory_limit};
-use write_lock::StripedLockManager;
-use std::collections::HashMap;
-use parking_lot::Mutex;
 use lru::LruCache;
+use memory_manager::{parse_memory_limit, MemoryConfig, MemoryManager};
+use parking_lot::Mutex;
+use query_engine::{execute_aggregate, execute_query, parse_sort_specs, CompiledFilter};
+use schema::{validate, Schema};
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
+use write_lock::StripedLockManager;
 
 static REGEX_CACHE: once_cell::sync::Lazy<Mutex<LruCache<String, regex::Regex>>> =
-    once_cell::sync::Lazy::new(|| {
-        Mutex::new(LruCache::new(NonZeroUsize::new(100).unwrap()))
-    });
+    once_cell::sync::Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(100).unwrap())));
 
 struct TransactionState {
     undo_log: Vec<(String, Option<Value>)>,
@@ -43,10 +41,12 @@ struct TransactionState {
 }
 
 struct PreparedFilter {
+    #[allow(dead_code)]
     field: String,
     op: String,
     value: Value,
     regex: Option<regex::Regex>,
+    path: Vec<String>,
 }
 
 impl PreparedFilter {
@@ -69,18 +69,19 @@ impl PreparedFilter {
         } else {
             None
         };
-        
+
         PreparedFilter {
             field: qf.field.clone(),
             op: qf.op.clone(),
             value: qf.value.clone(),
             regex,
+            path: qf.field.split('.').map(|s| s.to_string()).collect(),
         }
     }
 }
 
-use fs_lock::{ProcessLock, LockMode};
-use wal::{GroupCommitWAL, WalConfig, WalOp, WalOpType, DurabilityMode, recover_from_wal};
+use fs_lock::{LockMode, ProcessLock};
+use wal::{recover_from_wal, DurabilityMode, GroupCommitWAL, WalConfig, WalOp, WalOpType};
 
 // ============================================
 // THREAD POOL CONFIGURATION
@@ -99,13 +100,13 @@ impl ThreadPoolConfig {
         // Use parallelism only if we have more than 2 cores
         // and keep 1 core free for the main thread/system
         let use_parallel = available > 2;
-        
+
         ThreadPoolConfig {
             available_cores: available,
             use_parallel,
         }
     }
-    
+
     /// Should we use parallel processing for this workload?
     fn should_parallelize(&self, workload_size: usize) -> bool {
         self.use_parallel && workload_size >= 100
@@ -113,7 +114,7 @@ impl ThreadPoolConfig {
 }
 
 // Global thread pool config (initialized once)
-static THREAD_CONFIG: once_cell::sync::Lazy<ThreadPoolConfig> = 
+static THREAD_CONFIG: once_cell::sync::Lazy<ThreadPoolConfig> =
     once_cell::sync::Lazy::new(ThreadPoolConfig::new);
 
 // ============================================
@@ -151,7 +152,7 @@ struct WalEntry {
 #[napi(object)]
 pub struct QueryFilter {
     pub field: String,
-    pub op: String,   // "eq", "ne", "gt", "gte", "lt", "lte", "contains", "startswith", "endswith"
+    pub op: String, // "eq", "ne", "gt", "gte", "lt", "lte", "contains", "startswith", "endswith"
     pub value: Value,
 }
 
@@ -208,14 +209,14 @@ pub struct NativeDB {
     path: String,
     wal_path: String,
     data: Arc<PLRwLock<Value>>,
-    
+
     // v4.5: Process-level file locking
     #[allow(dead_code)]
     process_lock: Option<ProcessLock>,
-    
+
     // v4.5: Group commit WAL (replaces old WAL)
     wal: Option<Arc<GroupCommitWAL>>,
-    
+
     // v5.1 Persistent Indexes
     indexes: Arc<PLRwLock<HashMap<String, BTreeIndex>>>,
 
@@ -242,37 +243,43 @@ impl NativeDB {
     #[napi(constructor)]
     pub fn new(path: String, wal: bool) -> Result<Self> {
         let options = DBOptions {
-            lock_mode: LockMode::None,  // Legacy: no locking
-            durability: if wal { DurabilityMode::Batched } else { DurabilityMode::None },
+            lock_mode: LockMode::None, // Legacy: no locking
+            durability: if wal {
+                DurabilityMode::Batched
+            } else {
+                DurabilityMode::None
+            },
             wal_batch_size: 1000,
             wal_flush_ms: 10,
             lock_timeout_ms: 0,
         };
-        
+
         Self::new_with_options_internal(path, options)
     }
-    
+
     /// Internal constructor with full options
     fn new_with_options_internal(path: String, options: DBOptions) -> Result<Self> {
         // 1. Acquire process lock if requested
         let process_lock = match options.lock_mode {
-            LockMode::Exclusive => {
-                match ProcessLock::acquire(&path, options.lock_timeout_ms) {
-                    Ok(lock) => Some(lock),
-                    Err(e) => return Err(Error::from_reason(format!("Failed to acquire lock: {}", e))),
-                }
-            }
+            LockMode::Exclusive => match ProcessLock::acquire(&path, options.lock_timeout_ms) {
+                Ok(lock) => Some(lock),
+                Err(e) => return Err(Error::from_reason(format!("Failed to acquire lock: {}", e))),
+            },
             LockMode::Shared => {
                 // Check if locked, but don't acquire
                 match ProcessLock::is_locked(&path) {
-                    Ok(true) => return Err(Error::from_reason("Database is locked by another process".to_string())),
+                    Ok(true) => {
+                        return Err(Error::from_reason(
+                            "Database is locked by another process".to_string(),
+                        ))
+                    }
                     Ok(false) => None,
                     Err(_) => None, // If we can't check, proceed anyway
                 }
             }
             LockMode::None => None,
         };
-        
+
         // 2. Initialize WAL if durability enabled
         let wal_path = format!("{}.wal", path);
         let wal = if let Some(config) = options.durability.to_config() {
@@ -288,22 +295,20 @@ impl NativeDB {
         } else {
             None
         };
-        
+
         // 3. Load existing data or start fresh
         let mut data = json!({});
-        
+
         let p = PathBuf::from(&path);
         if p.exists() {
             // Load main DB
-            let contents = fs::read_to_string(&p).map_err(|e| {
-                Error::from_reason(format!("Failed to read database: {}", e))
-            })?;
-            
-            data = serde_json::from_str(&contents).map_err(|e| {
-                Error::from_reason(format!("Failed to parse database: {}", e))
-            })?;
+            let contents = fs::read_to_string(&p)
+                .map_err(|e| Error::from_reason(format!("Failed to read database: {}", e)))?;
+
+            data = serde_json::from_str(&contents)
+                .map_err(|e| Error::from_reason(format!("Failed to parse database: {}", e)))?;
         }
-        
+
         // 4. Recover from WAL
         if wal.is_some() {
             let _ = recover_from_wal(&wal_path, &mut data);
@@ -315,7 +320,7 @@ impl NativeDB {
                 let _ = Self::recover_legacy_wal(&legacy_wal, &mut data);
             }
         }
-        
+
         let memory_manager = MemoryManager::new(&path, MemoryConfig::default());
         let write_locks = StripedLockManager::new();
 
@@ -333,7 +338,7 @@ impl NativeDB {
             options,
         })
     }
-    
+
     /// v4.5: Create database with options from JS
     #[napi(js_name = "newWithOptions")]
     pub fn new_with_options_js(
@@ -351,7 +356,7 @@ impl NativeDB {
             wal_flush_ms: wal_flush_ms.unwrap_or(10) as u64,
             lock_timeout_ms: lock_timeout_ms.unwrap_or(5000) as u64,
         };
-        
+
         Self::new_with_options_internal(path, options)
     }
 
@@ -361,21 +366,24 @@ impl NativeDB {
         SystemInfo {
             available_cores: THREAD_CONFIG.available_cores as u32,
             parallel_enabled: THREAD_CONFIG.use_parallel,
-            recommended_batch_size: if THREAD_CONFIG.use_parallel { 1000 } else { 100 },
+            recommended_batch_size: if THREAD_CONFIG.use_parallel {
+                1000
+            } else {
+                100
+            },
         }
     }
-    
+
     /// v4.5: Explicit sync for durability
     #[napi]
     pub fn sync(&self) -> Result<()> {
         if let Some(ref wal) = self.wal {
-            wal.sync().map_err(|e| {
-                Error::from_reason(format!("Sync failed: {}", e))
-            })?;
+            wal.sync()
+                .map_err(|e| Error::from_reason(format!("Sync failed: {}", e)))?;
         }
         Ok(())
     }
-    
+
     /// v4.5: Get current WAL status
     #[napi]
     pub fn wal_status(&self) -> Result<Value> {
@@ -404,68 +412,71 @@ impl NativeDB {
     /// Legacy load (maintained for compatibility)
     #[napi]
     pub fn load(&self) -> Result<()> {
-    let p = PathBuf::from(&self.path);
-    
-    // Try to read directly.
-    // If it fails (Err), we check IF it was "NotFound".
-    match fs::read_to_string(&p) {
-        Ok(contents) => {
-            // File exists and we read it! Time to parse.
-            let new_data: Value = serde_json::from_str(&contents).map_err(|e| {
-                Error::from_reason(format!("Failed to parse database: {}", e))
-            })?;
+        let p = PathBuf::from(&self.path);
 
-            // CRITICAL ZONE: Quick swap
-            let mut data = self.data.write();
-            *data = new_data;
+        // Try to read directly.
+        // If it fails (Err), we check IF it was "NotFound".
+        match fs::read_to_string(&p) {
+            Ok(contents) => {
+                // File exists and we read it! Time to parse.
+                let new_data: Value = serde_json::from_str(&contents)
+                    .map_err(|e| Error::from_reason(format!("Failed to parse database: {}", e)))?;
+
+                // CRITICAL ZONE: Quick swap
+                let mut data = self.data.write();
+                *data = new_data;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // File doesn't exist? No problem, just do nothing or init empty.
+                // This is safer than p.exists()!
+                return Ok(());
+            }
+            Err(e) => {
+                // Genuine error (permission denied, etc.)
+                return Err(Error::from_reason(format!(
+                    "Failed to read database: {}",
+                    e
+                )));
+            }
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // File doesn't exist? No problem, just do nothing or init empty.
-            // This is safer than p.exists()!
-            return Ok(()); 
-        }
-        Err(e) => {
-            // Genuine error (permission denied, etc.)
-            return Err(Error::from_reason(format!("Failed to read database: {}", e)));
-        }
+
+        Ok(())
     }
-
-    Ok(())
-}
     #[napi]
     pub fn save(&self) -> Result<()> {
         // Flush WAL first if enabled
         if let Some(ref wal) = self.wal {
-            wal.sync().map_err(|e| {
-                Error::from_reason(format!("Failed to flush WAL: {}", e))
-            })?;
+            wal.sync()
+                .map_err(|e| Error::from_reason(format!("Failed to flush WAL: {}", e)))?;
         }
-        
+
         let data_guard = self.data.read();
-        let json_str = serde_json::to_string_pretty(&*data_guard).map_err(|e| Error::from_reason(e.to_string()))?;
-        
+        let json_str = serde_json::to_string_pretty(&*data_guard)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+
         // Atomic write
         let tmp_path = format!("{}.tmp", self.path);
         let mut file = File::create(&tmp_path)?;
         file.write_all(json_str.as_bytes())?;
         file.sync_all()?;
         fs::rename(tmp_path, &self.path)?;
-        
+
         // Clear WAL after successful save
         if self.wal.is_some() {
             // Truncate WAL file
             File::create(&self.wal_path)?;
         }
-        
+
         // Save indexes
         let mut indexes = self.indexes.write();
         for idx in indexes.values_mut() {
-            idx.save().map_err(|e| Error::from_reason(format!("Failed to save index: {:?}", e)))?;
+            idx.save()
+                .map_err(|e| Error::from_reason(format!("Failed to save index: {:?}", e)))?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Legacy WAL append (for internal use)
     fn append_wal(&self, op_type: WalOpType, path: &str, value: Option<Value>) -> Result<()> {
         if let Some(ref wal) = self.wal {
@@ -478,22 +489,23 @@ impl NativeDB {
                 path: path.to_string(),
                 value,
             };
-            
-            wal.append(op).map_err(|e| {
-                Error::from_reason(format!("WAL append failed: {}", e))
-            })?;
+
+            wal.append(op)
+                .map_err(|e| Error::from_reason(format!("WAL append failed: {}", e)))?;
         }
         Ok(())
     }
-    
+
     /// Recover from legacy WAL format
     fn recover_legacy_wal(wal_path: &str, data: &mut Value) -> Result<()> {
         let file = File::open(wal_path)?;
         let reader = BufReader::new(file);
-        
+
         for line in reader.lines() {
             if let Ok(l) = line {
-                if l.trim().is_empty() { continue; }
+                if l.trim().is_empty() {
+                    continue;
+                }
                 if let Ok(entry) = serde_json::from_str::<WalEntry>(&l) {
                     match entry.op.as_str() {
                         "set" => {
@@ -514,13 +526,38 @@ impl NativeDB {
                 }
             }
         }
-        
+
         Ok(())
     }
 
-    // --- Logic Helpers ---
 
-    /// Helper to convert dot-notation path to JSON pointer
+
+    /// Zero-allocation path traversal
+    #[allow(dead_code)]
+    fn get_value_from_root<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
+        if path.is_empty() {
+            return Some(root);
+        }
+        let mut current = root;
+        for part in path.split('.') {
+            match current {
+                Value::Object(map) => {
+                    current = map.get(part)?;
+                }
+                Value::Array(arr) => {
+                    if let Ok(idx) = part.parse::<usize>() {
+                        current = arr.get(idx)?;
+                    } else {
+                        return None;
+                    }
+                }
+                _ => return None,
+            }
+        }
+        Some(current)
+    }
+
+    /// Helper to convert dot-notation path to JSON pointer (Legacy, kept for compatibility if needed)
     fn normalize_path(path: &str) -> String {
         if path.starts_with('/') {
             path.to_string()
@@ -532,43 +569,59 @@ impl NativeDB {
     fn set_value_at_path(root: &mut Value, path_str: &str, value: Value) -> Result<()> {
         if path_str.is_empty() {
             *root = value;
-            return Ok(())
+            return Ok(());
         }
-        
+
         let mut parts = path_str.split('.');
         let mut part = match parts.next() {
             Some(p) => p,
             None => return Ok(()),
         };
-        
+
         let mut current = root;
-        
+
         for next_part in parts {
             let is_next_array_idx = next_part.parse::<usize>().is_ok();
 
             if current.is_null() {
-                 *current = Value::Object(serde_json::Map::new());
+                *current = Value::Object(serde_json::Map::new());
             }
 
             if let Value::Object(map) = current {
                 if !map.contains_key(part) {
-                    map.insert(part.to_string(), if is_next_array_idx { json!([]) } else { json!({}) });
+                    map.insert(
+                        part.to_string(),
+                        if is_next_array_idx {
+                            json!([])
+                        } else {
+                            json!({})
+                        },
+                    );
                 }
                 current = map.get_mut(part).unwrap();
             } else if let Value::Array(arr) = current {
-                 if let Ok(idx) = part.parse::<usize>() {
-                     while arr.len() <= idx {
-                         arr.push(Value::Null);
-                     }
-                     if arr[idx].is_null() {
-                          arr[idx] = if is_next_array_idx { json!([]) } else { json!({}) };
-                     }
-                     current = &mut arr[idx];
-                 } else {
-                     return Err(Error::from_reason("Cannot index array with string".to_string()));
-                 }
+                if let Ok(idx) = part.parse::<usize>() {
+                    while arr.len() <= idx {
+                        arr.push(Value::Null);
+                    }
+                    if arr[idx].is_null() {
+                        arr[idx] = if is_next_array_idx {
+                            json!([])
+                        } else {
+                            json!({})
+                        };
+                    }
+                    current = &mut arr[idx];
+                } else {
+                    return Err(Error::from_reason(
+                        "Cannot index array with string".to_string(),
+                    ));
+                }
             } else {
-                 return Err(Error::from_reason(format!("Path segment '{}' blocked by primitive", part)));
+                return Err(Error::from_reason(format!(
+                    "Path segment '{}' blocked by primitive",
+                    part
+                )));
             }
 
             part = next_part;
@@ -583,24 +636,29 @@ impl NativeDB {
                 }
                 arr[idx] = value;
             } else {
-                 return Err(Error::from_reason("Cannot set non-numeric key on array".to_string()));
+                return Err(Error::from_reason(
+                    "Cannot set non-numeric key on array".to_string(),
+                ));
             }
         } else {
-             if current.is_null() {
-                 let is_array = part.parse::<usize>().is_ok();
-                 if is_array {
-                     let idx = part.parse::<usize>().unwrap();
-                     let mut arr = vec![Value::Null; idx + 1];
-                     arr[idx] = value;
-                     *current = Value::Array(arr);
-                 } else {
-                     let mut map = serde_json::Map::new();
-                     map.insert(part.to_string(), value);
-                     *current = Value::Object(map);
-                 }
-             } else {
-                  return Err(Error::from_reason(format!("Parent of '{}' is not an object/array", part)));
-             }
+            if current.is_null() {
+                let is_array = part.parse::<usize>().is_ok();
+                if is_array {
+                    let idx = part.parse::<usize>().unwrap();
+                    let mut arr = vec![Value::Null; idx + 1];
+                    arr[idx] = value;
+                    *current = Value::Array(arr);
+                } else {
+                    let mut map = serde_json::Map::new();
+                    map.insert(part.to_string(), value);
+                    *current = Value::Object(map);
+                }
+            } else {
+                return Err(Error::from_reason(format!(
+                    "Parent of '{}' is not an object/array",
+                    part
+                )));
+            }
         }
         Ok(())
     }
@@ -608,17 +666,27 @@ impl NativeDB {
     fn delete_value_at_path(root: &mut Value, path_str: &str) -> Result<()> {
         if path_str.is_empty() {
             *root = json!({});
-            return Ok(())
+            return Ok(());
         }
         let parts: Vec<&str> = path_str.split('.').collect();
-        if parts.is_empty() { return Ok(()) }
-        
-        let parent_path = parts[..parts.len()-1].join(".");
+        if parts.is_empty() {
+            return Ok(());
+        }
+
+        let parent_path = parts[..parts.len() - 1].join(".");
         let target_key = parts.last().unwrap();
-        
-        let ptr = if parent_path.is_empty() { "".to_string() } else { format!("/{}", parent_path.replace(".", "/")) };
-        
-        let parent = if ptr.is_empty() { Some(root) } else { root.pointer_mut(&ptr) };
+
+        let ptr = if parent_path.is_empty() {
+            "".to_string()
+        } else {
+            format!("/{}", parent_path.replace(".", "/"))
+        };
+
+        let parent = if ptr.is_empty() {
+            Some(root)
+        } else {
+            root.pointer_mut(&ptr)
+        };
 
         if let Some(p) = parent {
             if let Value::Object(map) = p {
@@ -636,18 +704,18 @@ impl NativeDB {
 
     fn push_value_at_path(root: &mut Value, path_str: &str, value: Value) -> Result<()> {
         let ptr = Self::normalize_path(path_str);
-        
+
         if let Some(target) = root.pointer_mut(&ptr) {
             if let Value::Array(arr) = target {
                 // Dedupe: check if value exists
                 if !arr.contains(&value) {
-                     arr.push(value);
+                    arr.push(value);
                 }
             } else {
                 return Err(Error::from_reason("Target is not an array".to_string()));
             }
         } else {
-             return Err(Error::from_reason("Path does not exist".to_string()));
+            return Err(Error::from_reason("Path does not exist".to_string()));
         }
         Ok(())
     }
@@ -700,34 +768,40 @@ impl NativeDB {
     pub fn parallel_query(&self, path: String, filters: Vec<QueryFilter>) -> Result<Value> {
         let data = self.data.read();
         let ptr = Self::normalize_path(&path);
-        
+
         let collection = if ptr == "/" || ptr.is_empty() {
             Some(&*data)
         } else {
             data.pointer(&ptr)
         };
-        
+
         match collection {
             Some(Value::Object(map)) => {
                 let items: Vec<&Value> = map.values().collect();
-                let prepared: Vec<PreparedFilter> = filters.iter().map(PreparedFilter::from_query_filter).collect();
+                let prepared: Vec<PreparedFilter> = filters
+                    .iter()
+                    .map(PreparedFilter::from_query_filter)
+                    .collect();
                 let filtered = self.filter_items_parallel(&items, &prepared);
                 Ok(Value::Array(filtered))
             }
             Some(Value::Array(arr)) => {
                 let items: Vec<&Value> = arr.iter().collect();
-                let prepared: Vec<PreparedFilter> = filters.iter().map(PreparedFilter::from_query_filter).collect();
+                let prepared: Vec<PreparedFilter> = filters
+                    .iter()
+                    .map(PreparedFilter::from_query_filter)
+                    .collect();
                 let filtered = self.filter_items_parallel(&items, &prepared);
                 Ok(Value::Array(filtered))
             }
             _ => Ok(Value::Array(vec![])),
         }
     }
-    
+
     /// Internal parallel filter implementation
     fn filter_items_parallel(&self, items: &[&Value], filters: &[PreparedFilter]) -> Vec<Value> {
         let count = items.len();
-        
+
         if THREAD_CONFIG.should_parallelize(count) && !filters.is_empty() {
             items
                 .par_iter()
@@ -742,7 +816,7 @@ impl NativeDB {
                 .collect()
         }
     }
-    
+
     /// Check if an item matches all filters
     fn matches_filters(&self, item: &Value, filters: &[PreparedFilter]) -> bool {
         for filter in filters {
@@ -752,16 +826,15 @@ impl NativeDB {
         }
         true
     }
-    
+
     /// Check if an item matches a single filter
     fn matches_filter(&self, item: &Value, filter: &PreparedFilter) -> bool {
-        let parts: Vec<&str> = filter.field.split('.').collect();
         let mut current = item;
-        
-        for part in &parts {
+
+        for part in &filter.path {
             match current {
                 Value::Object(map) => {
-                    if let Some(v) = map.get(*part) {
+                    if let Some(v) = map.get(part) {
                         current = v;
                     } else {
                         return false;
@@ -856,18 +929,18 @@ impl NativeDB {
                 }
             }
             "containsAll" => {
-                 if let (Value::Array(curr_arr), Value::Array(req_arr)) = (current, &filter.value) {
-                     req_arr.iter().all(|req| curr_arr.contains(req))
-                 } else {
-                     false
-                 }
+                if let (Value::Array(curr_arr), Value::Array(req_arr)) = (current, &filter.value) {
+                    req_arr.iter().all(|req| curr_arr.contains(req))
+                } else {
+                    false
+                }
             }
             "containsAny" => {
-                 if let (Value::Array(curr_arr), Value::Array(req_arr)) = (current, &filter.value) {
-                     req_arr.iter().any(|req| curr_arr.contains(req))
-                 } else {
-                     false
-                 }
+                if let (Value::Array(curr_arr), Value::Array(req_arr)) = (current, &filter.value) {
+                    req_arr.iter().any(|req| curr_arr.contains(req))
+                } else {
+                    false
+                }
             }
             _ => true,
         }
@@ -875,34 +948,41 @@ impl NativeDB {
 
     /// Parallel aggregation operations
     #[napi]
-    pub fn parallel_aggregate(&self, path: String, operation: String, field: Option<String>) -> Result<Value> {
+    pub fn parallel_aggregate(
+        &self,
+        path: String,
+        operation: String,
+        field: Option<String>,
+    ) -> Result<Value> {
         let data = self.data.read();
         let ptr = Self::normalize_path(&path);
-        
+
         let collection = if ptr == "/" || ptr.is_empty() {
             Some(&*data)
         } else {
             data.pointer(&ptr)
         };
-        
+
         let items: Vec<&Value> = match collection {
             Some(Value::Object(map)) => map.values().collect(),
             Some(Value::Array(arr)) => arr.iter().collect(),
             _ => return Ok(Value::Null),
         };
-        
+
         let count = items.len();
-        
+
         match operation.as_str() {
             "count" => Ok(json!(count)),
             "sum" => {
                 let field_name = field.unwrap_or_default();
                 let sum: f64 = if THREAD_CONFIG.should_parallelize(count) {
-                    items.par_iter()
+                    items
+                        .par_iter()
                         .filter_map(|item| self.get_numeric_field(item, &field_name))
                         .sum()
                 } else {
-                    items.iter()
+                    items
+                        .iter()
                         .filter_map(|item| self.get_numeric_field(item, &field_name))
                         .sum()
                 };
@@ -911,11 +991,13 @@ impl NativeDB {
             "avg" => {
                 let field_name = field.unwrap_or_default();
                 let values: Vec<f64> = if THREAD_CONFIG.should_parallelize(count) {
-                    items.par_iter()
+                    items
+                        .par_iter()
                         .filter_map(|item| self.get_numeric_field(item, &field_name))
                         .collect()
                 } else {
-                    items.iter()
+                    items
+                        .iter()
                         .filter_map(|item| self.get_numeric_field(item, &field_name))
                         .collect()
                 };
@@ -929,12 +1011,14 @@ impl NativeDB {
             "min" => {
                 let field_name = field.unwrap_or_default();
                 let min: Option<f64> = if THREAD_CONFIG.should_parallelize(count) {
-                    items.par_iter()
+                    items
+                        .par_iter()
                         .filter_map(|item| self.get_numeric_field(item, &field_name))
                         .reduce(|| f64::INFINITY, |a, b| a.min(b))
                         .into()
                 } else {
-                    items.iter()
+                    items
+                        .iter()
                         .filter_map(|item| self.get_numeric_field(item, &field_name))
                         .reduce(f64::min)
                 };
@@ -946,12 +1030,14 @@ impl NativeDB {
             "max" => {
                 let field_name = field.unwrap_or_default();
                 let max: Option<f64> = if THREAD_CONFIG.should_parallelize(count) {
-                    items.par_iter()
+                    items
+                        .par_iter()
                         .filter_map(|item| self.get_numeric_field(item, &field_name))
                         .reduce(|| f64::NEG_INFINITY, |a, b| a.max(b))
                         .into()
                 } else {
-                    items.iter()
+                    items
+                        .iter()
                         .filter_map(|item| self.get_numeric_field(item, &field_name))
                         .reduce(f64::max)
                 };
@@ -984,7 +1070,7 @@ impl NativeDB {
             } else {
                 data.pointer(&ptr)
             };
-            
+
             match collection {
                 Some(Value::Object(map)) => Some(map.values().collect()),
                 Some(Value::Array(arr)) => Some(arr.iter().collect()),
@@ -992,8 +1078,12 @@ impl NativeDB {
             }
         };
 
-        let left_items = get_items(&left_path).ok_or_else(|| Error::from_reason(format!("Left collection not found: {}", left_path)))?;
-        let right_items = get_items(&right_path).ok_or_else(|| Error::from_reason(format!("Right collection not found: {}", right_path)))?;
+        let left_items = get_items(&left_path).ok_or_else(|| {
+            Error::from_reason(format!("Left collection not found: {}", left_path))
+        })?;
+        let right_items = get_items(&right_path).ok_or_else(|| {
+            Error::from_reason(format!("Right collection not found: {}", right_path))
+        })?;
 
         // Parse fields
         let left_segments = parse_path(&left_field);
@@ -1002,15 +1092,15 @@ impl NativeDB {
         // Build hash table on right collection
         use std::collections::HashMap;
         let mut hash_table: HashMap<String, Vec<&Value>> = HashMap::new();
-        
+
         for item in &right_items {
-             if let Some(val) = self.get_value_at_path_segments(item, &right_segments) {
-                 let key = match val {
-                     Value::String(s) => s.clone(),
-                     _ => val.to_string(),
-                 };
-                 hash_table.entry(key).or_default().push(item);
-             }
+            if let Some(val) = self.get_value_at_path_segments(item, &right_segments) {
+                let key = match val {
+                    Value::String(s) => s.clone(),
+                    _ => val.to_string(),
+                };
+                hash_table.entry(key).or_default().push(item);
+            }
         }
 
         // Probe with left collection
@@ -1038,23 +1128,24 @@ impl NativeDB {
         hash_table: &HashMap<String, Vec<&Value>>,
     ) -> Value {
         // Calculate matches first (read-only)
-        let matches_curr = if let Some(val) = self.get_value_at_path_segments(left_item, left_segments) {
-            let matches = match val {
-                Value::String(s) => hash_table.get(s),
-                _ => {
-                    let key = val.to_string();
-                    hash_table.get(&key)
-                }
-            };
+        let matches_curr =
+            if let Some(val) = self.get_value_at_path_segments(left_item, left_segments) {
+                let matches = match val {
+                    Value::String(s) => hash_table.get(s),
+                    _ => {
+                        let key = val.to_string();
+                        hash_table.get(&key)
+                    }
+                };
 
-            if let Some(m_list) = matches {
-                m_list.iter().map(|m| (*m).clone()).collect()
+                if let Some(m_list) = matches {
+                    m_list.iter().map(|m| (*m).clone()).collect()
+                } else {
+                    Vec::new()
+                }
             } else {
                 Vec::new()
-            }
-        } else {
-            Vec::new()
-        };
+            };
 
         // Clone and modify
         let mut joined = left_item.clone();
@@ -1065,7 +1156,11 @@ impl NativeDB {
     }
 
     /// Helper to get arbitrary field value (supports dot notation)
-    fn get_value_at_path_segments<'a>(&self, item: &'a Value, segments: &[PathSegment]) -> Option<&'a Value> {
+    fn get_value_at_path_segments<'a>(
+        &self,
+        item: &'a Value,
+        segments: &[PathSegment],
+    ) -> Option<&'a Value> {
         let mut current = item;
 
         for segment in segments {
@@ -1079,11 +1174,11 @@ impl NativeDB {
                 }
                 Value::Array(arr) => {
                     if let Some(idx) = segment.index {
-                         if let Some(v) = arr.get(idx) {
+                        if let Some(v) = arr.get(idx) {
                             current = v;
-                         } else {
-                             return None;
-                         }
+                        } else {
+                            return None;
+                        }
                     } else {
                         return None;
                     }
@@ -1099,7 +1194,7 @@ impl NativeDB {
     fn get_value_at_field<'a>(&self, item: &'a Value, path: &str) -> Option<&'a Value> {
         let parts: Vec<&str> = path.split('.').collect();
         let mut current = item;
-        
+
         for part in parts {
             match current {
                 Value::Object(map) => {
@@ -1111,11 +1206,11 @@ impl NativeDB {
                 }
                 Value::Array(arr) => {
                     if let Ok(idx) = part.parse::<usize>() {
-                         if let Some(v) = arr.get(idx) {
+                        if let Some(v) = arr.get(idx) {
                             current = v;
-                         } else {
-                             return None;
-                         }
+                        } else {
+                            return None;
+                        }
                     } else {
                         return None;
                     }
@@ -1125,16 +1220,16 @@ impl NativeDB {
         }
         Some(current)
     }
-    
+
     /// Helper to get numeric field value
     fn get_numeric_field(&self, item: &Value, field: &str) -> Option<f64> {
         if field.is_empty() {
             return item.as_f64();
         }
-        
+
         let parts: Vec<&str> = field.split('.').collect();
         let mut current = item;
-        
+
         for part in parts {
             match current {
                 Value::Object(map) => {
@@ -1147,7 +1242,7 @@ impl NativeDB {
                 _ => return None,
             }
         }
-        
+
         current.as_f64()
     }
 
@@ -1160,28 +1255,23 @@ impl NativeDB {
             return Ok(data.clone());
         }
         let ptr = Self::normalize_path(&path);
-        match data.pointer(&ptr) {
-            Some(v) => Ok(v.clone()),
-            None => Ok(Value::Null), 
-        }
+        Ok(data.pointer(&ptr).cloned().unwrap_or(Value::Null))
     }
-    
+
     #[napi]
     pub fn get_many(&self, paths: Vec<String>) -> Result<Vec<Value>> {
         let data = self.data.read();
-        let mut results = Vec::with_capacity(paths.len());
-        
-        for path in paths {
-            if path.is_empty() {
-                results.push(data.clone());
-                continue;
-            }
-            let ptr = Self::normalize_path(&path);
-            match data.pointer(&ptr) {
-                Some(v) => results.push(v.clone()),
-                None => results.push(Value::Null),
-            }
-        }
+        let results = paths
+            .iter()
+            .map(|path| {
+                if path.is_empty() {
+                    data.clone()
+                } else {
+                    let ptr = Self::normalize_path(path);
+                    data.pointer(&ptr).cloned().unwrap_or(Value::Null)
+                }
+            })
+            .collect();
         Ok(results)
     }
 
@@ -1192,33 +1282,33 @@ impl NativeDB {
 
         // Append to WAL first (durability)
         self.append_wal(WalOpType::Set, &path, Some(value.clone()))?;
-        
+
         // v5.5: Acquire stripe lock for this collection (allows concurrent writes to different collections)
         let _stripe = self.write_locks.lock_for_write(&path);
-        
+
         // Update memory (global write lock held for minimal time)
         let mut data = self.data.write();
         Self::set_value_at_path(&mut data, &path, value)?;
         Ok(())
     }
-    
+
     #[napi]
     pub fn has(&self, path: String) -> Result<bool> {
         let data = self.data.read();
         let ptr = Self::normalize_path(&path);
         Ok(data.pointer(&ptr).is_some())
     }
-    
+
     #[napi]
     pub fn delete(&self, path: String) -> Result<()> {
         // v5.1 Transaction support
         self.record_undo(&path);
 
         self.append_wal(WalOpType::Delete, &path, None)?;
-        
+
         // v5.5: Stripe lock for concurrent deletes to different collections
         let _stripe = self.write_locks.lock_for_write(&path);
-        
+
         let mut data = self.data.write();
         Self::delete_value_at_path(&mut data, &path)?;
         Ok(())
@@ -1231,7 +1321,7 @@ impl NativeDB {
 
         // v5.5: Stripe lock for concurrent pushes to different arrays
         let _stripe = self.write_locks.lock_for_write(&path);
-        
+
         let mut data = self.data.write();
         Self::push_value_at_path(&mut data, &path, value)?;
         Ok(())
@@ -1242,39 +1332,50 @@ impl NativeDB {
     pub fn offload(&self, path: String) -> Result<String> {
         // v5.5: Stripe lock for concurrent offload
         let _stripe = self.write_locks.lock_for_write(&path);
-        
+
         let mut data = self.data.write();
         let ptr = Self::normalize_path(&path);
-        
+
         // We need to clone the value to write it, then replace it.
         // Or better: temporarily replace with Null to take ownership, then write.
-        let val_opt = data.pointer_mut(&ptr).map(|v| std::mem::replace(v, Value::Null));
-        
-        if let Some(val) = val_opt {
-             if val.is_null() { return Ok("".to_string()); } // Already null
+        let val_opt = data
+            .pointer_mut(&ptr)
+            .map(|v| std::mem::replace(v, Value::Null));
 
-             // Generate ID
-             let id = format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
-             let cold_path = format!("{}.cold.{}", self.path, id);
-             
-             // Write to disk
-             let json = serde_json::to_string(&val).map_err(|e| Error::from_reason(e.to_string()))?;
-             std::fs::write(&cold_path, json)?;
-             
-             // Replace with pointer
-             let marker = json!({
-                 "__cold__": true,
-                 "id": id
-             });
-             
-             // We just replaced it with Null above, now set the marker
-             if let Some(target) = data.pointer_mut(&ptr) {
-                 *target = marker;
-             }
-             
-             Ok(id)
+        if let Some(val) = val_opt {
+            if val.is_null() {
+                return Ok("".to_string());
+            } // Already null
+
+            // Generate ID
+            let id = format!(
+                "{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            );
+            let cold_path = format!("{}.cold.{}", self.path, id);
+
+            // Write to disk
+            let json =
+                serde_json::to_string(&val).map_err(|e| Error::from_reason(e.to_string()))?;
+            std::fs::write(&cold_path, json)?;
+
+            // Replace with pointer
+            let marker = json!({
+                "__cold__": true,
+                "id": id
+            });
+
+            // We just replaced it with Null above, now set the marker
+            if let Some(target) = data.pointer_mut(&ptr) {
+                *target = marker;
+            }
+
+            Ok(id)
         } else {
-             Ok("".to_string())
+            Ok("".to_string())
         }
     }
 
@@ -1282,28 +1383,29 @@ impl NativeDB {
     pub fn restore(&self, path: String) -> Result<bool> {
         // v5.5: Stripe lock for concurrent restore
         let _stripe = self.write_locks.lock_for_write(&path);
-        
+
         let mut data = self.data.write();
         let ptr = Self::normalize_path(&path);
-        
+
         let marker_opt = data.pointer(&ptr).cloned();
-        
+
         if let Some(marker) = marker_opt {
             if let Some(obj) = marker.as_object() {
                 if obj.contains_key("__cold__") {
                     if let Some(id_val) = obj.get("id") {
                         if let Some(id) = id_val.as_str() {
                             let cold_path = format!("{}.cold.{}", self.path, id);
-                            
+
                             if std::path::Path::new(&cold_path).exists() {
                                 let content = std::fs::read_to_string(&cold_path)?;
-                                let val: Value = serde_json::from_str(&content).map_err(|e| Error::from_reason(e.to_string()))?;
-                                
+                                let val: Value = serde_json::from_str(&content)
+                                    .map_err(|e| Error::from_reason(e.to_string()))?;
+
                                 // Restore value
                                 if let Some(target) = data.pointer_mut(&ptr) {
                                     *target = val;
                                 }
-                                
+
                                 // Clean up cold file
                                 let _ = std::fs::remove_file(cold_path);
                                 return Ok(true);
@@ -1317,7 +1419,7 @@ impl NativeDB {
     }
 
     // ============================================
-    // v5.5: NATIVE QUERY ENGINE 
+    // v5.5: NATIVE QUERY ENGINE
     // ============================================
 
     /// Execute a full query pipeline entirely in Rust: filter → sort → skip → limit → select
@@ -1326,7 +1428,7 @@ impl NativeDB {
     pub fn execute_query(
         &self,
         path: String,
-        filters_json: String,     // JSON array of {field, op, value}
+        filters_json: String,      // JSON array of {field, op, value}
         sort_json: Option<String>, // JSON object like {"age": -1, "name": 1}
         limit: Option<u32>,
         skip: Option<u32>,
@@ -1334,44 +1436,47 @@ impl NativeDB {
     ) -> Result<Value> {
         let data = self.data.read();
         let ptr = Self::normalize_path(&path);
-        
+
         let collection = if ptr == "/" || ptr.is_empty() {
             Some(&*data)
         } else {
             data.pointer(&ptr)
         };
-        
+
         let collection = match collection {
             Some(c) => c,
             None => return Ok(Value::Array(vec![])),
         };
-        
+
         // Parse filters from JSON
-        let compiled_filters: Vec<CompiledFilter> = if filters_json.is_empty() || filters_json == "[]" {
-            vec![]
-        } else {
-            let raw_filters: Vec<QueryFilter> = serde_json::from_str(&filters_json)
-                .map_err(|e| Error::from_reason(format!("Invalid filters JSON: {}", e)))?;
-            raw_filters.iter()
-                .filter_map(|qf| CompiledFilter::compile(&qf.field, &qf.op, &qf.value))
-                .collect()
-        };
-        
+        let compiled_filters: Vec<CompiledFilter> =
+            if filters_json.is_empty() || filters_json == "[]" {
+                vec![]
+            } else {
+                let raw_filters: Vec<QueryFilter> = serde_json::from_str(&filters_json)
+                    .map_err(|e| Error::from_reason(format!("Invalid filters JSON: {}", e)))?;
+                raw_filters
+                    .iter()
+                    .filter_map(|qf| CompiledFilter::compile(&qf.field, &qf.op, &qf.value))
+                    .collect()
+            };
+
         // Parse sort specs
         let sort_specs = match &sort_json {
             Some(s) if !s.is_empty() && s != "{}" => parse_sort_specs(s),
             _ => vec![],
         };
-        
+
         // Pre-split select field paths
         let select_paths: Option<Vec<Vec<String>>> = select_fields.map(|fields| {
-            fields.iter()
+            fields
+                .iter()
                 .map(|f| f.split('.').map(|s| s.to_string()).collect())
                 .collect()
         });
-        
+
         let use_parallel = THREAD_CONFIG.use_parallel;
-        
+
         Ok(execute_query(
             collection,
             &compiled_filters,
@@ -1398,42 +1503,45 @@ impl NativeDB {
     ) -> Result<String> {
         let data = self.data.read();
         let ptr = Self::normalize_path(&path);
-        
+
         let collection = if ptr == "/" || ptr.is_empty() {
             Some(&*data)
         } else {
             data.pointer(&ptr)
         };
-        
+
         let collection = match collection {
             Some(c) => c,
             None => return Ok("[]".to_string()),
         };
-        
+
         // Parse filters from JSON
-        let compiled_filters: Vec<CompiledFilter> = if filters_json.is_empty() || filters_json == "[]" {
-            vec![]
-        } else {
-            let raw_filters: Vec<QueryFilter> = serde_json::from_str(&filters_json)
-                .map_err(|e| Error::from_reason(format!("Invalid filters JSON: {}", e)))?;
-            raw_filters.iter()
-                .filter_map(|qf| CompiledFilter::compile(&qf.field, &qf.op, &qf.value))
-                .collect()
-        };
-        
+        let compiled_filters: Vec<CompiledFilter> =
+            if filters_json.is_empty() || filters_json == "[]" {
+                vec![]
+            } else {
+                let raw_filters: Vec<QueryFilter> = serde_json::from_str(&filters_json)
+                    .map_err(|e| Error::from_reason(format!("Invalid filters JSON: {}", e)))?;
+                raw_filters
+                    .iter()
+                    .filter_map(|qf| CompiledFilter::compile(&qf.field, &qf.op, &qf.value))
+                    .collect()
+            };
+
         let sort_specs = match &sort_json {
             Some(s) if !s.is_empty() && s != "{}" => parse_sort_specs(s),
             _ => vec![],
         };
-        
+
         let select_paths: Option<Vec<Vec<String>>> = select_fields.map(|fields| {
-            fields.iter()
+            fields
+                .iter()
                 .map(|f| f.split('.').map(|s| s.to_string()).collect())
                 .collect()
         });
-        
+
         let use_parallel = THREAD_CONFIG.use_parallel;
-        
+
         let result = execute_query(
             collection,
             &compiled_filters,
@@ -1443,7 +1551,7 @@ impl NativeDB {
             &select_paths,
             use_parallel,
         );
-        
+
         // Serialize to JSON string — much faster than N-API recursive Value conversion
         serde_json::to_string(&result)
             .map_err(|e| Error::from_reason(format!("Serialization error: {}", e)))
@@ -1460,34 +1568,35 @@ impl NativeDB {
     ) -> Result<String> {
         let data = self.data.read();
         let ptr = Self::normalize_path(&path);
-        
+
         let collection = if ptr == "/" || ptr.is_empty() {
             Some(&*data)
         } else {
             data.pointer(&ptr)
         };
-        
+
         let collection = match collection {
             Some(c) => c,
             None => return Ok("null".to_string()),
         };
-        
-        let compiled_filters: Vec<CompiledFilter> = if filters_json.is_empty() || filters_json == "[]" {
-            vec![]
-        } else {
-            let raw_filters: Vec<QueryFilter> = serde_json::from_str(&filters_json)
-                .map_err(|e| Error::from_reason(format!("Invalid filters JSON: {}", e)))?;
-            raw_filters.iter()
-                .filter_map(|qf| CompiledFilter::compile(&qf.field, &qf.op, &qf.value))
-                .collect()
-        };
-        
-        let field_segments: Option<Vec<String>> = field.map(|f| {
-            f.split('.').map(|s| s.to_string()).collect()
-        });
-        
+
+        let compiled_filters: Vec<CompiledFilter> =
+            if filters_json.is_empty() || filters_json == "[]" {
+                vec![]
+            } else {
+                let raw_filters: Vec<QueryFilter> = serde_json::from_str(&filters_json)
+                    .map_err(|e| Error::from_reason(format!("Invalid filters JSON: {}", e)))?;
+                raw_filters
+                    .iter()
+                    .filter_map(|qf| CompiledFilter::compile(&qf.field, &qf.op, &qf.value))
+                    .collect()
+            };
+
+        let field_segments: Option<Vec<String>> =
+            field.map(|f| f.split('.').map(|s| s.to_string()).collect());
+
         let use_parallel = THREAD_CONFIG.use_parallel;
-        
+
         let result = execute_aggregate(
             collection,
             &compiled_filters,
@@ -1495,7 +1604,7 @@ impl NativeDB {
             &field_segments,
             use_parallel,
         );
-        
+
         serde_json::to_string(&result)
             .map_err(|e| Error::from_reason(format!("Serialization error: {}", e)))
     }
@@ -1511,35 +1620,36 @@ impl NativeDB {
     ) -> Result<Value> {
         let data = self.data.read();
         let ptr = Self::normalize_path(&path);
-        
+
         let collection = if ptr == "/" || ptr.is_empty() {
             Some(&*data)
         } else {
             data.pointer(&ptr)
         };
-        
+
         let collection = match collection {
             Some(c) => c,
             None => return Ok(Value::Null),
         };
-        
+
         // Parse filters
-        let compiled_filters: Vec<CompiledFilter> = if filters_json.is_empty() || filters_json == "[]" {
-            vec![]
-        } else {
-            let raw_filters: Vec<QueryFilter> = serde_json::from_str(&filters_json)
-                .map_err(|e| Error::from_reason(format!("Invalid filters JSON: {}", e)))?;
-            raw_filters.iter()
-                .filter_map(|qf| CompiledFilter::compile(&qf.field, &qf.op, &qf.value))
-                .collect()
-        };
-        
-        let field_segments: Option<Vec<String>> = field.map(|f| {
-            f.split('.').map(|s| s.to_string()).collect()
-        });
-        
+        let compiled_filters: Vec<CompiledFilter> =
+            if filters_json.is_empty() || filters_json == "[]" {
+                vec![]
+            } else {
+                let raw_filters: Vec<QueryFilter> = serde_json::from_str(&filters_json)
+                    .map_err(|e| Error::from_reason(format!("Invalid filters JSON: {}", e)))?;
+                raw_filters
+                    .iter()
+                    .filter_map(|qf| CompiledFilter::compile(&qf.field, &qf.op, &qf.value))
+                    .collect()
+            };
+
+        let field_segments: Option<Vec<String>> =
+            field.map(|f| f.split('.').map(|s| s.to_string()).collect());
+
         let use_parallel = THREAD_CONFIG.use_parallel;
-        
+
         Ok(execute_aggregate(
             collection,
             &compiled_filters,
@@ -1550,7 +1660,7 @@ impl NativeDB {
     }
 
     // ============================================
-    // v5.5: OPTIMIZED ARRAY OPERATIONS 
+    // v5.5: OPTIMIZED ARRAY OPERATIONS
     // ============================================
 
     /// Pull (remove) items from an array — O(N) single pass with HashSet lookup
@@ -1558,25 +1668,28 @@ impl NativeDB {
     #[napi]
     pub fn pull_items(&self, path: String, items: Vec<Value>) -> Result<u32> {
         self.record_undo(&path);
-        self.append_wal(WalOpType::Delete, &path, Some(json!({"__pull__": items.clone()})))?;
-        
+        self.append_wal(
+            WalOpType::Delete,
+            &path,
+            Some(json!({"__pull__": items.clone()})),
+        )?;
+
         // v5.5: Stripe lock for concurrent array operations
         let _stripe = self.write_locks.lock_for_write(&path);
-        
+
         let mut data = self.data.write();
         let ptr = Self::normalize_path(&path);
-        
+
         if let Some(target) = data.pointer_mut(&ptr) {
             if let Value::Array(arr) = target {
                 // Build set of serialized items for O(1) lookup
-                let remove_set: std::collections::HashSet<String> = items.iter()
+                let remove_set: std::collections::HashSet<String> = items
+                    .iter()
                     .map(|v| serde_json::to_string(v).unwrap_or_default())
                     .collect();
-                
+
                 let before = arr.len();
-                arr.retain(|v| {
-                    !remove_set.contains(&serde_json::to_string(v).unwrap_or_default())
-                });
+                arr.retain(|v| !remove_set.contains(&serde_json::to_string(v).unwrap_or_default()));
                 Ok((before - arr.len()) as u32)
             } else {
                 Err(Error::from_reason("Target is not an array".to_string()))
@@ -1591,20 +1704,21 @@ impl NativeDB {
     #[napi]
     pub fn push_batch(&self, path: String, items: Vec<Value>) -> Result<u32> {
         self.record_undo(&path);
-        
+
         // v5.5: Stripe lock for concurrent batch pushes
         let _stripe = self.write_locks.lock_for_write(&path);
-        
+
         let mut data = self.data.write();
         let ptr = Self::normalize_path(&path);
-        
+
         if let Some(target) = data.pointer_mut(&ptr) {
             if let Value::Array(arr) = target {
                 // Build set of existing serialized items for O(1) dedup
-                let existing: std::collections::HashSet<String> = arr.iter()
+                let existing: std::collections::HashSet<String> = arr
+                    .iter()
                     .map(|v| serde_json::to_string(v).unwrap_or_default())
                     .collect();
-                
+
                 let mut added = 0u32;
                 for item in items {
                     let key = serde_json::to_string(&item).unwrap_or_default();
@@ -1630,7 +1744,7 @@ impl NativeDB {
     #[napi]
     pub fn configure_memory(
         &self,
-        max_memory: String,       // e.g. "512mb", "1gb", "0" (disabled)
+        max_memory: String, // e.g. "512mb", "1gb", "0" (disabled)
         cold_storage_dir: Option<String>,
         eviction_threshold_pct: Option<u32>,
         eviction_target_pct: Option<u32>,
@@ -1643,7 +1757,7 @@ impl NativeDB {
             eviction_threshold_pct: eviction_threshold_pct.unwrap_or(80) as u8,
             eviction_target_pct: eviction_target_pct.unwrap_or(60) as u8,
         };
-        
+
         let mut mm = self.memory_manager.lock();
         *mm = MemoryManager::new(&self.path, config);
         Ok(())
@@ -1657,17 +1771,17 @@ impl NativeDB {
         if !mm.is_enabled() {
             return Ok(vec![]);
         }
-        
+
         let mut data = self.data.write();
         let keys_to_evict = mm.check_pressure(&data);
-        
+
         let mut evicted = Vec::new();
         for key in keys_to_evict {
             if mm.offload_key(&mut data, &key).is_ok() {
                 evicted.push(key);
             }
         }
-        
+
         Ok(evicted)
     }
 
@@ -1677,11 +1791,11 @@ impl NativeDB {
         let mm = self.memory_manager.lock();
         let data = self.data.read();
         drop(mm);
-        
+
         let mut mm = self.memory_manager.lock();
         mm.update_size_estimates(&data);
         let stats = mm.stats();
-        
+
         Ok(json!({
             "totalEstimatedBytes": stats.total_estimated_bytes,
             "maxMemoryBytes": stats.max_memory_bytes,
@@ -1692,20 +1806,27 @@ impl NativeDB {
     }
 
     // Indexing API
-    
+
     #[napi]
     pub fn register_index(&self, name: String, field: String) -> Result<()> {
         let mut indexes = self.indexes.write();
         if !indexes.contains_key(&name) {
-             let idx = BTreeIndex::load_or_create(name.clone(), field.clone(), &self.path)
-                 .map_err(|e| Error::from_reason(format!("Failed to load index {}: {:?}", name, e)))?;
-             indexes.insert(name, idx);
+            let idx = BTreeIndex::load_or_create(name.clone(), field.clone(), &self.path).map_err(
+                |e| Error::from_reason(format!("Failed to load index {}: {:?}", name, e)),
+            )?;
+            indexes.insert(name, idx);
         }
         Ok(())
     }
-    
+
     #[napi]
-    pub fn update_index(&self, name: String, key: Value, path: String, is_delete: bool) -> Result<()> {
+    pub fn update_index(
+        &self,
+        name: String,
+        key: Value,
+        path: String,
+        is_delete: bool,
+    ) -> Result<()> {
         let mut indexes = self.indexes.write();
         if let Some(idx) = indexes.get_mut(&name) {
             if is_delete {
@@ -1716,7 +1837,7 @@ impl NativeDB {
         }
         Ok(())
     }
-    
+
     #[napi]
     pub fn find_index_paths(&self, name: String, key: Value) -> Result<Vec<String>> {
         let indexes = self.indexes.read();
@@ -1727,18 +1848,23 @@ impl NativeDB {
         }
         Ok(vec![])
     }
-    
+
     #[napi]
     pub fn clear_index(&self, name: String) -> Result<()> {
-         let mut indexes = self.indexes.write();
-         if let Some(idx) = indexes.get_mut(&name) {
-             idx.clear();
-         }
-         Ok(())
+        let mut indexes = self.indexes.write();
+        if let Some(idx) = indexes.get_mut(&name) {
+            idx.clear();
+        }
+        Ok(())
     }
 
     #[napi]
-    pub fn find_index_range(&self, name: String, start: Option<Value>, end: Option<Value>) -> Result<Vec<String>> {
+    pub fn find_index_range(
+        &self,
+        name: String,
+        start: Option<Value>,
+        end: Option<Value>,
+    ) -> Result<Vec<String>> {
         let indexes = self.indexes.read();
         if let Some(idx) = indexes.get(&name) {
             return Ok(idx.range(start.as_ref(), end.as_ref()));
@@ -1753,7 +1879,9 @@ impl NativeDB {
         let mut schema: Schema = serde_json::from_str(&schema_json)
             .map_err(|e| Error::from_reason(format!("Invalid schema JSON: {}", e)))?;
 
-        schema.compile().map_err(|e| Error::from_reason(format!("Invalid regex in schema: {}", e)))?;
+        schema
+            .compile()
+            .map_err(|e| Error::from_reason(format!("Invalid regex in schema: {}", e)))?;
 
         let mut schemas = self.schemas.write();
         schemas.insert(path, schema);
@@ -1768,7 +1896,9 @@ impl NativeDB {
         while !parts.is_empty() {
             let current_path = parts.join(".");
             if let Some(schema) = schemas.get(&current_path) {
-                validate(&value, schema).map_err(|e| Error::from_reason(format!("Validation failed at {}: {}", current_path, e)))?;
+                validate(&value, schema).map_err(|e| {
+                    Error::from_reason(format!("Validation failed at {}: {}", current_path, e))
+                })?;
                 break;
             }
             parts.pop();
@@ -1777,7 +1907,7 @@ impl NativeDB {
     }
 
     // Advanced Transactions
-    
+
     #[napi]
     pub fn begin_transaction(&self) -> Result<()> {
         let mut state = self.transaction_state.lock();
@@ -1790,7 +1920,7 @@ impl NativeDB {
         });
         Ok(())
     }
-    
+
     #[napi]
     pub fn commit_transaction(&self) -> Result<()> {
         let mut state = self.transaction_state.lock();
@@ -1800,7 +1930,7 @@ impl NativeDB {
         *state = None;
         Ok(())
     }
-    
+
     #[napi]
     pub fn rollback_transaction(&self) -> Result<()> {
         let mut state_lock = self.transaction_state.lock();
@@ -1812,7 +1942,7 @@ impl NativeDB {
         }
         Ok(())
     }
-    
+
     #[napi]
     pub fn create_savepoint(&self, name: String) -> Result<()> {
         let mut state = self.transaction_state.lock();
@@ -1823,7 +1953,7 @@ impl NativeDB {
             Err(Error::from_reason("No active transaction".to_string()))
         }
     }
-    
+
     #[napi]
     pub fn rollback_to_savepoint(&self, name: String) -> Result<()> {
         let mut state_lock = self.transaction_state.lock();
@@ -1834,14 +1964,21 @@ impl NativeDB {
                 self.apply_undo_log(&mut data, to_rollback)?;
                 Ok(())
             } else {
-                Err(Error::from_reason(format!("Savepoint '{}' not found", name)))
+                Err(Error::from_reason(format!(
+                    "Savepoint '{}' not found",
+                    name
+                )))
             }
         } else {
             Err(Error::from_reason("No active transaction".to_string()))
         }
     }
-    
-    fn apply_undo_log(&self, data: &mut Value, undo_log: Vec<(String, Option<Value>)>) -> Result<()> {
+
+    fn apply_undo_log(
+        &self,
+        data: &mut Value,
+        undo_log: Vec<(String, Option<Value>)>,
+    ) -> Result<()> {
         // Apply in reverse order
         for (path, old_value) in undo_log.into_iter().rev() {
             if let Some(val) = old_value {
@@ -1852,12 +1989,14 @@ impl NativeDB {
         }
         Ok(())
     }
-    
+
     fn record_undo(&self, path: &str) {
         let mut state_lock = self.transaction_state.lock();
         if let Some(state) = state_lock.as_mut() {
             let data = self.data.read();
-            let old_value = data.pointer(&format!("/{}", path.replace(".", "/"))).cloned();
+            let old_value = data
+                .pointer(&format!("/{}", path.replace(".", "/")))
+                .cloned();
             state.undo_log.push((path.to_string(), old_value));
         }
     }

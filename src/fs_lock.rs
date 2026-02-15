@@ -63,14 +63,7 @@ impl ProcessLock {
             
             // Try non-blocking exclusive lock
             if Self::try_lock_exclusive(&file)? {
-                // Check if it's a stale lock
-                if Self::is_stale_lock(&lock_path)? {
-                    // Remove stale lock and retry immediately
-                    let _ = std::fs::remove_file(&lock_path);
-                    continue;
-                }
-                
-                // We got the lock! Write PID.
+                // We got the flock! We own this lock now. Write our PID.
                 let pid = std::process::id();
                 file.set_len(0)?;
                 writeln!(file, "{}", pid)?;
@@ -80,6 +73,15 @@ impl ProcessLock {
                     lock_file: file,
                     lock_path,
                 });
+            }
+
+            // flock failed - another process holds the lock.
+            // Check if that process is still alive (stale lock detection).
+            if Self::is_stale_lock(&lock_path).unwrap_or(false) {
+                // Stale lock: the holding process is dead.
+                // Remove the lock file and retry immediately.
+                let _ = std::fs::remove_file(&lock_path);
+                continue;
             }
 
             // Check timeout

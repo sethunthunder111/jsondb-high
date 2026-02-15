@@ -388,7 +388,7 @@ dependencies = [
 
 [[package]]
 name = "jsondb-high"
-version = "4.5.0"
+version = "5.5.0"
 dependencies = [
  "aes-gcm",
  "anyhow",

@@ -19,6 +19,7 @@
   <script src="https://unpkg.com/@studio-freight/lenis@1.0.29/dist/lenis.min.js"></script>
 </head>
 <body>
+  <div class="scroll-progress-container"><div class="scroll-progress-bar" id="scrollProgressBar"></div></div>
   <!-- Navigation -->
   <nav class="nav">
     <div class="nav-container">
@@ -39,6 +40,39 @@
       </button>
     </div>
   </nav>
+
+  <!-- Hero Section -->
+  <header class="hero">
+    <div class="docs-hero-bg"></div>
+    <div class="hero-content">
+      <div class="hero-left">
+        <div class="hero-badge">v5.5.0 Release</div>
+        <h1 class="hero-title">
+          <span class="text-outlined-white">HIGH</span><br>
+          PERFORMANCE
+        </h1>
+        <p class="hero-subtitle">
+          The acid-compliant, multi-process safe JSON database for Node.js. Powered by a 
+          <span style="color: var(--acid-green); font-weight: 600;">Rust core</span> via N-API.
+        </p>
+
+        <div class="hero-stats">
+          <div>
+            <div class="hero-stat-value">2M<span>+</span></div>
+            <div class="hero-stat-label">Reads/Sec</div>
+          </div>
+          <div>
+            <div class="hero-stat-value">260k<span>+</span></div>
+            <div class="hero-stat-label">Writes/Sec</div>
+          </div>
+          <div>
+            <div class="hero-stat-value">0.003<span>ms</span></div>
+            <div class="hero-stat-label">Latency</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
 
   <div class="docs-layout">
     <!-- Sidebar -->
@@ -96,6 +130,9 @@
             <li class="docs-nav-item"><a href="#middleware" class="docs-nav-link">Middleware</a></li>
             <li class="docs-nav-item"><a href="#utility" class="docs-nav-link">Utility Methods</a></li>
             <li class="docs-nav-item"><a href="#events" class="docs-nav-link">Events</a></li>
+            <li class="docs-nav-item"><a href="#schema-validation" class="docs-nav-link">Schema Validation</a></li>
+            <li class="docs-nav-item"><a href="#where-clauses" class="docs-nav-link">Where Clauses</a></li>
+            <li class="docs-nav-item"><a href="#parallel-query" class="docs-nav-link">Parallel Query</a></li>
           </ul>
         </div>
         
@@ -112,25 +149,35 @@
 
     <!-- Main Content -->
     <main class="docs-content">
-      <h1 class="hero-title text-outlined-white" style="font-size: 4rem; margin-bottom: 2rem;">DOCUMENTATION</h1>
       
       <section id="introduction" class="animate-fade-up">
-        <p class="hero-subtitle">Complete guide to using <span style="color: var(--acid-green)">jsondb-high</span>, the high-performance JSON database for Node.js with a Rust-powered core via N-API.</p>
-
+        <h2 style="margin-top: 0;">Introduction</h2>
+        <p>Welcome to the future of Node.js data storage. <strong>jsondb-high</strong> bridges the gap between the simplicity of JSON files and the performance of enterprise-grade databases.</p>
+        
         <div class="alert alert-info">
-          <strong>New in v4.5:</strong> Hybrid Architecture with configurable durability and locking modes.
+          <strong>New in v4.5:</strong> Hybrid Architecture with configurable durability and locking modes for maximum reliability.
         </div>
       </section>
 
       <h2 id="features" class="section-header">Features</h2>
-      <ul style="list-style: none; padding: 0; display: grid; gap: 1rem;">
-        <li style="border-left: 2px solid var(--acid-green); padding-left: 1rem;"><strong>⚡ Blazing Fast</strong>: Core logic in Rust via N-API (~2M ops/s reads, ~260k ops/s writes)</li>
-        <li style="border-left: 2px solid var(--acid-green); padding-left: 1rem;"><strong>🔒 Multi-Process Safe</strong>: OS-level advisory file locking prevents data corruption</li>
-        <li style="border-left: 2px solid var(--acid-green); padding-left: 1rem;"><strong>🧵 Multi-Core Processing</strong>: Adaptive parallelism using Rayon</li>
-        <li style="border-left: 2px solid var(--acid-green); padding-left: 1rem;"><strong>🛡️ Atomic Operations</strong>: Group Commit Write-Ahead Logging (WAL) for ACID durability</li>
-        <li style="border-left: 2px solid var(--acid-green); padding-left: 1rem;"><strong>🔍 O(1) Indexing</strong>: In-memory Map indices for instant lookups</li>
-        <li style="border-left: 2px solid var(--acid-green); padding-left: 1rem;"><strong>🔒 Encryption</strong>: AES-256-GCM encryption for data at rest</li>
-      </ul>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+        <div class="feature-card">
+          <h4 style="margin-top: 0;">⚡ Blazing Fast</h4>
+          <p style="font-size: 0.9rem; margin-bottom: 0;">Core logic in Rust via N-API. Up to 2M ops/s reads.</p>
+        </div>
+        <div class="feature-card">
+          <h4 style="margin-top: 0;">🔒 Multi-Process Safe</h4>
+          <p style="font-size: 0.9rem; margin-bottom: 0;">OS-level advisory file locking prevents corruption.</p>
+        </div>
+        <div class="feature-card">
+          <h4 style="margin-top: 0;">🧵 Multi-Core</h4>
+          <p style="font-size: 0.9rem; margin-bottom: 0;">Adaptive parallelism utilizing all CPU cores with Rayon.</p>
+        </div>
+        <div class="feature-card">
+          <h4 style="margin-top: 0;">🛡️ ACID Durability</h4>
+          <p style="font-size: 0.9rem; margin-bottom: 0;">Write-Ahead Logging (WAL) ensures your data is safe.</p>
+        </div>
+      </div>
 
       <h2 id="installation" class="section-header">Installation</h2>
       <div class="code-block">
@@ -142,7 +189,7 @@ bun add jsondb-high
 npm install jsondb-high</code></pre>
       </div>
       <div class="alert">
-        <strong>Note:</strong> This package builds its native core from source. You need Rust and Cargo installed.
+        <strong>Note:</strong> This package builds its native core from source. Ensure Rust and Cargo are installed on your machine.
       </div>
 
       <h2 id="requirements" class="section-header">Requirements</h2>
@@ -379,13 +426,197 @@ npm install jsondb-high</code></pre>
       <h2 id="events" class="section-header">Events</h2>
       <div class="code-block">
         <button class="code-copy">Copy</button>
-        <pre><code>db.<span class="token-function">on</span>(<span class="token-string">'change'</span>, ({ path, value }) => { ... });
-db.<span class="token-function">on</span>(<span class="token-string">'error'</span>, (err) => { ... });</code></pre>
+        <pre><code>db.<span class="token-function">on</span>(<span class="token-string">'change'</span>, ({ path, value, oldValue }) => { ... });
+db.<span class="token-function">on</span>(<span class="token-string">'batch'</span>, ({ operations }) => { ... });
+db.<span class="token-function">on</span>(<span class="token-string">'transaction:commit'</span>, () => { ... });
+db.<span class="token-function">on</span>(<span class="token-string">'transaction:rollback'</span>, ({ error }) => { ... });
+db.<span class="token-function">on</span>(<span class="token-string">'snapshot:created'</span>, ({ path, name }) => { ... });
+db.<span class="token-function">on</span>(<span class="token-string">'snapshot:restored'</span>, ({ path }) => { ... });
+db.<span class="token-function">on</span>(<span class="token-string">'ttl:expired'</span>, ({ path }) => { ... });
+db.<span class="token-function">on</span>(<span class="token-string">'error'</span>, (error) => { ... });</code></pre>
+      </div>
+
+      <h2 id="schema-validation" class="section-header">Schema Validation (v5.1+)</h2>
+      <p>Define schemas to enforce data structure and validation rules at specific paths.</p>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> db = <span class="token-keyword">new</span> <span class="token-function">JSONDatabase</span>(<span class="token-string">'db.json'</span>, {
+  schemas: {
+    <span class="token-string">'users'</span>: {
+      type: <span class="token-string">'object'</span>,
+      properties: {
+        id: { type: <span class="token-string">'number'</span> },
+        email: { 
+          type: <span class="token-string">'string'</span>, 
+          pattern: <span class="token-string">'^[\\w.-]+@[\\w.-]+\\.\\w+$'</span> 
+        },
+        age: { 
+          type: <span class="token-string">'number'</span>, 
+          minimum: <span class="token-number">0</span>, maximum: <span class="token-number">150</span> 
+        },
+        role: { 
+          type: <span class="token-string">'string'</span>, 
+          enum: [<span class="token-string">'admin'</span>, <span class="token-string">'user'</span>, <span class="token-string">'guest'</span>] 
+        },
+        tags: {
+          type: <span class="token-string">'array'</span>,
+          items: { type: <span class="token-string">'string'</span> },
+          uniqueItems: <span class="token-keyword">true</span>
+        }
+      },
+      required: [<span class="token-string">'id'</span>, <span class="token-string">'email'</span>]
+    }
+  }
+});
+
+<span class="token-comment">// ❌ Missing required field</span>
+<span class="token-keyword">await</span> db.<span class="token-function">set</span>(<span class="token-string">'users.1'</span>, { id: <span class="token-number">1</span> });
+
+<span class="token-comment">// ✅ Valid data</span>
+<span class="token-keyword">await</span> db.<span class="token-function">set</span>(<span class="token-string">'users.1'</span>, { 
+  id: <span class="token-number">1</span>, 
+  email: <span class="token-string">'alice@example.com'</span>,
+  age: <span class="token-number">25</span>,
+  role: <span class="token-string">'admin'</span>
+});</code></pre>
+      </div>
+
+      <h3>Schema Types &amp; Constraints</h3>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>Type</th><th>Constraints</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>string</code></td><td><code>minLength</code>, <code>maxLength</code>, <code>pattern</code> (regex)</td></tr>
+            <tr><td><code>number</code></td><td><code>minimum</code>, <code>maximum</code>, <code>exclusiveMinimum</code>, <code>exclusiveMaximum</code></td></tr>
+            <tr><td><code>array</code></td><td><code>minItems</code>, <code>maxItems</code>, <code>uniqueItems</code>, <code>items</code> (item schema)</td></tr>
+            <tr><td><code>object</code></td><td><code>properties</code>, <code>required</code></td></tr>
+            <tr><td>All types</td><td><code>enum</code> (allowed values)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="where-clauses" class="section-header">Where Clauses</h2>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code>.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">eq</span>(value)      <span class="token-comment">// Equal</span>
+.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">ne</span>(value)      <span class="token-comment">// Not equal</span>
+.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">gt</span>(value)      <span class="token-comment">// Greater than</span>
+.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">gte</span>(value)     <span class="token-comment">// Greater or equal</span>
+.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">lt</span>(value)      <span class="token-comment">// Less than</span>
+.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">lte</span>(value)     <span class="token-comment">// Less or equal</span>
+.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">between</span>(<span class="token-number">1</span>, <span class="token-number">10</span>) <span class="token-comment">// Between range</span>
+.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">in</span>([<span class="token-number">1</span>, <span class="token-number">2</span>])     <span class="token-comment">// In array</span>
+.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">notIn</span>([<span class="token-number">1</span>])    <span class="token-comment">// Not in array</span>
+.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">contains</span>(<span class="token-string">'x'</span>)  <span class="token-comment">// String contains</span>
+.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">startsWith</span>(<span class="token-string">'x'</span>)<span class="token-comment">// String starts with</span>
+.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">endsWith</span>(<span class="token-string">'x'</span>)  <span class="token-comment">// String ends with</span>
+.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">matches</span>(<span class="token-string">/^x/</span>) <span class="token-comment">// Regex match</span>
+.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">exists</span>()       <span class="token-comment">// Field exists</span>
+.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">isNull</span>()       <span class="token-comment">// Is null</span>
+.<span class="token-function">where</span>(<span class="token-string">'field'</span>).<span class="token-function">isNotNull</span>()    <span class="token-comment">// Is not null</span></code></pre>
+      </div>
+
+      <h2 id="parallel-query" class="section-header">Parallel Query</h2>
+      <p>High-performance filtering using native Rust parallel iteration.</p>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> activeAdults = <span class="token-keyword">await</span> db.<span class="token-function">parallelQuery</span>(<span class="token-string">'users'</span>, [
+  { field: <span class="token-string">'age'</span>, op: <span class="token-string">'gte'</span>, value: <span class="token-number">18</span> },
+  { field: <span class="token-string">'status'</span>, op: <span class="token-string">'eq'</span>, value: <span class="token-string">'active'</span> }
+]);</code></pre>
+      </div>
+
+      <h3>Parallel Aggregation</h3>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> count = <span class="token-keyword">await</span> db.<span class="token-function">parallelAggregate</span>(<span class="token-string">'orders'</span>, <span class="token-string">'count'</span>);
+<span class="token-keyword">const</span> totalRevenue = <span class="token-keyword">await</span> db.<span class="token-function">parallelAggregate</span>(<span class="token-string">'orders'</span>, <span class="token-string">'sum'</span>, <span class="token-string">'amount'</span>);
+<span class="token-keyword">const</span> avgOrder = <span class="token-keyword">await</span> db.<span class="token-function">parallelAggregate</span>(<span class="token-string">'orders'</span>, <span class="token-string">'avg'</span>, <span class="token-string">'amount'</span>);</code></pre>
+      </div>
+
+      <h3>Parallel Joins (Lookups)</h3>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> usersWithOrders = <span class="token-keyword">await</span> db.<span class="token-function">parallelLookup</span>(
+  <span class="token-string">'users'</span>,      <span class="token-comment">// left collection</span>
+  <span class="token-string">'orders'</span>,     <span class="token-comment">// right collection</span>
+  <span class="token-string">'id'</span>,         <span class="token-comment">// left field (users.id)</span>
+  <span class="token-string">'userId'</span>,     <span class="token-comment">// right field (orders.userId)</span>
+  <span class="token-string">'orders'</span>      <span class="token-comment">// output field name</span>
+);</code></pre>
       </div>
 
       <h2 id="types-interfaces" class="section-header">TypeScript Interfaces</h2>
-      <p>Please refer to the source code <code>index.ts</code> or the generated <code>index.d.ts</code> for full type definitions.</p>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">interface</span> <span class="token-type">DBOptions</span> {
+  indices?: <span class="token-type">IndexConfig</span>[];
+  wal?: <span class="token-type">boolean</span>;
+  encryptionKey?: <span class="token-type">string</span>;
+  autoSaveInterval?: <span class="token-type">number</span>;
+  lockMode?: <span class="token-string">'exclusive'</span> | <span class="token-string">'shared'</span> | <span class="token-string">'none'</span>;
+  lockTimeoutMs?: <span class="token-type">number</span>;
+  durability?: <span class="token-string">'none'</span> | <span class="token-string">'lazy'</span> | <span class="token-string">'batched'</span> | <span class="token-string">'sync'</span>;
+  walBatchSize?: <span class="token-type">number</span>;
+  walFlushMs?: <span class="token-type">number</span>;
+  schemas?: <span class="token-type">Record</span>&lt;<span class="token-type">string</span>, <span class="token-type">Schema</span>&gt;;
+  slowQueryThresholdMs?: <span class="token-type">number</span>;
+}
 
+<span class="token-keyword">interface</span> <span class="token-type">IndexConfig</span> {
+  name: <span class="token-type">string</span>;
+  path: <span class="token-type">string</span>;
+  field: <span class="token-type">string</span>;
+}</code></pre>
+      </div>
+
+      <h2 id="types-schemas" class="section-header">Schema Types</h2>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">interface</span> <span class="token-type">Schema</span> {
+  type: <span class="token-string">'string'</span> | <span class="token-string">'number'</span> | <span class="token-string">'boolean'</span> | <span class="token-string">'array'</span> | <span class="token-string">'object'</span>;
+  properties?: <span class="token-type">Record</span>&lt;<span class="token-type">string</span>, <span class="token-type">Schema</span>&gt;;
+  required?: <span class="token-type">string</span>[];
+  items?: <span class="token-type">Schema</span>;
+  enum?: <span class="token-type">any</span>[];
+  minimum?: <span class="token-type">number</span>;
+  maximum?: <span class="token-type">number</span>;
+  minLength?: <span class="token-type">number</span>;
+  maxLength?: <span class="token-type">number</span>;
+  pattern?: <span class="token-type">string</span>;
+  minItems?: <span class="token-type">number</span>;
+  maxItems?: <span class="token-type">number</span>;
+  uniqueItems?: <span class="token-type">boolean</span>;
+}</code></pre>
+      </div>
+
+      <h2 id="types-query" class="section-header">Query Types</h2>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">interface</span> <span class="token-type">ParallelFilter</span> {
+  field: <span class="token-type">string</span>;
+  op: <span class="token-string">'eq'</span> | <span class="token-string">'ne'</span> | <span class="token-string">'gt'</span> | <span class="token-string">'gte'</span> | <span class="token-string">'lt'</span> | <span class="token-string">'lte'</span> | 
+      <span class="token-string">'contains'</span> | <span class="token-string">'startswith'</span> | <span class="token-string">'endswith'</span> | 
+      <span class="token-string">'in'</span> | <span class="token-string">'notin'</span> | <span class="token-string">'regex'</span>;
+  value: <span class="token-type">any</span>;
+}
+
+<span class="token-keyword">interface</span> <span class="token-type">PaginateResult</span>&lt;<span class="token-type">T</span>&gt; {
+  data: <span class="token-type">T</span>[];
+  meta: {
+    total: <span class="token-type">number</span>;
+    pages: <span class="token-type">number</span>;
+    page: <span class="token-type">number</span>;
+    limit: <span class="token-type">number</span>;
+    hasNext: <span class="token-type">boolean</span>;
+    hasPrev: <span class="token-type">boolean</span>;
+  };
+}</code></pre>
+      </div>
+
+      <div id="docsFooterNav" class="docs-footer-nav"></div>
     </main>
   </div>
 
@@ -452,9 +683,11 @@ db.<span class="token-function">on</span>(<span class="token-string">'error'</sp
 
         if (results.length > 0) {
            searchResults.innerHTML = results.map(r => `
-            <div style="padding: 5px 0; border-bottom: 1px solid #333; cursor: pointer;"
-                 onclick="document.getElementById('${r.id}').scrollIntoView({behavior:'smooth'}); searchResults.style.display='none';">
-              <div style="color: var(--acid-green); font-size: 0.9rem;">${r.title}</div>
+            <div style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); cursor: pointer; transition: background 0.2s;"
+                 onmouseover="this.style.background='rgba(255,255,255,0.05)'"
+                 onmouseout="this.style.background='transparent'"
+                 onclick="const target = document.getElementById('${r.id}'); if(window.lenis) window.lenis.scrollTo(target); else target.scrollIntoView({behavior:'auto'}); searchResults.style.display='none';">
+              <div style="color: var(--acid-green); font-size: 0.9rem; font-family: var(--font-mono);">${r.title}</div>
             </div>
           `).join('');
           searchResults.style.display = 'block';
@@ -470,6 +703,109 @@ db.<span class="token-function">on</span>(<span class="token-string">'error'</sp
           searchInput.focus();
         }
       });
+
+      // Close search on click outside
+      document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+          searchResults.style.display = 'none';
+        }
+      });
+    }
+
+    // Scroll Progress Bar
+    window.addEventListener('scroll', () => {
+      const winScroll = window.pageYOffset || document.documentElement.scrollTop;
+      const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      const progressBar = document.getElementById('scrollProgressBar');
+      if (progressBar) progressBar.style.width = scrolled + '%';
+    });
+
+    // Anchor Links for Headers
+    document.querySelectorAll('.docs-content h2, .docs-content h3').forEach(heading => {
+      if (heading.id) {
+        const anchor = document.createElement('a');
+        anchor.className = 'anchor-link';
+        anchor.href = '#' + heading.id;
+        anchor.textContent = '#';
+        anchor.title = 'Copy link to this section';
+        anchor.onclick = (e) => {
+          e.preventDefault();
+          history.pushState(null, null, '#' + heading.id);
+          navigator.clipboard.writeText(window.location.href);
+          
+          // Micro interaction
+          const originalText = anchor.textContent;
+          anchor.textContent = '✓';
+          setTimeout(() => anchor.textContent = originalText, 1000);
+          
+          // Smooth scroll to target
+          if(window.lenis) window.lenis.scrollTo(heading);
+          else heading.scrollIntoView({behavior: 'auto'});
+        };
+        heading.appendChild(anchor);
+      }
+    });
+
+    // Code Block Copy Button
+    document.querySelectorAll('.code-copy').forEach(button => {
+      button.addEventListener('click', () => {
+        const pre = button.nextElementSibling;
+        const code = pre.querySelector('code');
+        navigator.clipboard.writeText(code.textContent);
+        
+        const originalText = button.textContent;
+        button.textContent = 'Copied!';
+        button.classList.add('copied');
+        
+        setTimeout(() => {
+          button.textContent = originalText;
+          button.classList.remove('copied');
+        }, 2000);
+      });
+    });
+
+    // Intersection Observer for Sidebar Active State
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          document.querySelectorAll('.docs-nav-link').forEach(link => link.classList.remove('active'));
+          
+          const activeLink = document.querySelector(`.docs-nav-link[href="#${entry.target.id}"]`);
+          if (activeLink) {
+            activeLink.classList.add('active');
+            // Only scroll sidebar on desktop where it's sticky — never call scrollIntoView on the link
+            // as it can scroll the entire page and fight with user scrolling
+            const sidebar = document.querySelector('.docs-sidebar');
+            if (sidebar && window.innerWidth > 1024) {
+              const sidebarRect = sidebar.getBoundingClientRect();
+              const linkRect = activeLink.getBoundingClientRect();
+              if (linkRect.top < sidebarRect.top || linkRect.bottom > sidebarRect.bottom) {
+                sidebar.scrollTop += linkRect.top - sidebarRect.top - sidebarRect.height / 2;
+              }
+            }
+          }
+        }
+      });
+    }, { rootMargin: '-20% 0px -60% 0px' });
+
+    document.querySelectorAll('.docs-content h2, .docs-content section').forEach(section => {
+      if(section.id) observer.observe(section);
+    });
+
+    // Populate Footer Navigation
+    const footerNav = document.getElementById('docsFooterNav');
+    if (footerNav) {
+      footerNav.innerHTML = `
+        <a href="index.html" class="nav-paging-link">
+          <span class="nav-paging-label">Previous</span>
+          <span class="nav-paging-title">Home</span>
+        </a>
+        <a href="benchmarks.html" class="nav-paging-link" style="text-align: right;">
+          <span class="nav-paging-label">Next</span>
+          <span class="nav-paging-title">Benchmarks</span>
+        </a>
+      `;
     }
   </script>
 </body>

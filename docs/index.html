@@ -4,184 +4,169 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>jsondb-high — High-Performance JSON Database</title>
-  <meta name="description" content="A blazing fast, feature-rich JSON database for Node.js with a Rust-powered core. 2M ops/s reads, 260k ops/s writes.">
+  <meta name="description" content="A blazing fast, feature-rich JSON database for Node.js with a Rust-powered core.">
   
   <link rel="stylesheet" href="styles.css">
-
-  <!-- Fonts -->
+  
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 
-  <!-- Scripts -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js"></script>
   <script src="https://unpkg.com/@studio-freight/lenis@1.0.29/dist/lenis.min.js"></script>
+  <script src="hero-animation.js"></script>
 </head>
 <body>
+  <div class="noise-overlay"></div>
   <!-- Navigation -->
   <nav class="nav">
     <div class="nav-container">
-      <a href="index.html" class="nav-logo">
-        JSONDB<span>-HIGH</span>
-      </a>
+      <a href="index.html" class="nav-logo">JSONDB<span>-HIGH</span></a>
       <div class="nav-links" id="navLinks">
         <a href="index.html" class="nav-link active">Home</a>
         <a href="docs.html" class="nav-link">Docs</a>
         <a href="benchmarks.html" class="nav-link">Benchmarks</a>
-        <a href="https://github.com/sethunthunder111/jsondb-high" class="nav-link" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/sethunthunder111/jsondb-high" class="nav-link" target="_blank">GitHub</a>
         <a href="docs.html#quick-start" class="nav-cta">Get Started</a>
       </div>
-      <button class="nav-toggle" id="navToggle" aria-label="Toggle menu">
-        <span></span>
-        <span></span>
-        <span></span>
-      </button>
+      <button class="nav-toggle" id="navToggle"><span></span><span></span><span></span></button>
     </div>
   </nav>
 
-  <!-- Hero Section -->
-  <header class="hero">
-    <div class="hero-content">
-      <div class="hero-left">
-        <div class="hero-badge">RUST POWERED FFI</div>
+  <!-- Parallax Hero -->
+  <header class="parallax-hero">
+    <canvas id="hero-canvas"></canvas>
+    <div class="scanline"></div>
+    
+    <!-- Floating Elements -->
+    <div class="floating-code" style="top: 20%; left: 10%;">let db = new JSONDatabase();</div>
+    <div class="floating-code" style="top: 60%; right: 15%;">await db.set('speed', 'infinite');</div>
+    <div class="floating-code" style="bottom: 15%; left: 20%;">2M OPS/SEC</div>
+
+    <div class="parallax-content">
+      
+      <div style="z-index: 10; position: relative;">
+        <div class="hero-badge animate-scale-in">v5.5.0 HYBRID ARCHITECTURE</div>
         <h1 class="hero-title">
-          JSONDB<br>
-          <span class="text-outlined">HIGH</span>
+          <span class="text-outlined-white">BEYOND</span><br>
+          <span style="color: var(--acid-green); text-shadow: 0 0 60px rgba(212,255,0,0.5);">SPEED</span>
         </h1>
-        <p class="hero-subtitle">
-          In-memory JSON management for <strong>Node.js</strong>. Zero dependencies. <span style="color: var(--acid-green)">Acidic</span> speed.
+        <p class="hero-subtitle" style="max-width: 600px; margin: 1.5rem 0 3rem; font-size: 1.4rem; color: var(--text-primary);">
+          Multi-process safe, <strong>Rust-powered</strong> JSON database. 
+          Built for high-throughput Node.js applications that demand zero latency.
         </p>
 
-        <div class="hero-cta">
-          <a href="docs.html#quick-start" class="btn btn-primary">Start Building</a>
-          <a href="docs.html" class="btn btn-secondary">Read Documentation</a>
+        <div class="hero-cta" style="justify-content: flex-start; flex-wrap: wrap; gap: 1.5rem;">
+          <a href="docs.html#quick-start" class="btn btn-primary" style="padding: 1.2rem 2.5rem; font-size: 1.1rem;">Get Started</a>
+          <a href="benchmarks.html" class="btn btn-secondary" style="padding: 1.2rem 2.5rem; font-size: 1.1rem;">View Benchmarks</a>
+        </div>
+
+        <!-- Install Command Box -->
+        <div class="hero-install-cmd" onclick="navigator.clipboard.writeText('npm install jsondb-high'); this.querySelector('.cmd-text').innerText = 'Copied!'; setTimeout(() => this.querySelector('.cmd-text').innerText = 'npm install jsondb-high', 2000);">
+          <span style="color: var(--text-muted);">$</span>
+          <span class="cmd-text">npm install jsondb-high</span>
+          <svg class="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
         </div>
       </div>
-      
-      <div class="hero-right">
-        <div class="hero-code-window animate-fade-up">
-          <div class="window-header">
-            <div class="window-dot red"></div>
-            <div class="window-dot yellow"></div>
-            <div class="window-dot green"></div>
-            <div class="window-title">bash — 80x24</div>
-          </div>
-          <pre><code><span class="token-function">➜</span>  ~  npm install jsondb-high
 
-<span class="token-comment">[1/3] Resolving packages...</span>
-<span class="token-comment">[2/3] Fetching packages...</span>
-<span class="token-comment">[3/3] Linking dependencies...</span>
-<span class="token-string">+ jsondb-high@4.5.0</span>
-
-<span class="token-keyword">const</span> db = <span class="token-keyword">new</span> <span class="token-function">Database</span>();
-<span class="token-keyword">await</span> db.<span class="token-function">set</span>(<span class="token-string">'ready'</span>, <span class="token-keyword">true</span>);</code></pre>
+      <!-- Floating Code Window -->
+      <div class="hero-code-window glare-container">
+        <div class="glare"></div>
+        <div class="window-header">
+          <div class="window-dot red"></div>
+          <div class="window-dot yellow"></div>
+          <div class="window-dot green"></div>
+          <div class="window-title">hybrid-config.ts</div>
         </div>
+        <pre><code class="language-typescript" style="font-size: 0.85rem; line-height: 1.6;">
+<span class="token-keyword">import</span> { JSONDatabase } <span class="token-keyword">from</span> <span class="token-string">'jsondb-high'</span>;
+
+<span class="token-comment">// High-Performance Hybrid Mode</span>
+<span class="token-keyword">const</span> db = <span class="token-keyword">new</span> <span class="token-function">JSONDatabase</span>(<span class="token-string">'./data.json'</span>, {
+  <span class="token-comment">// Acid-Compliant Durability</span>
+  durability: <span class="token-string">'batched'</span>,
+  walFlushMs: <span class="token-number">10</span>,
+
+  <span class="token-comment">// Multi-Process Safety</span>
+  lockMode: <span class="token-string">'exclusive'</span>,
+  
+  <span class="token-comment">// Auto-Parallelism (Rayon)</span>
+  parallel: <span class="token-keyword">true</span>
+});
+
+<span class="token-keyword">await</span> db.<span class="token-function">set</span>(<span class="token-string">'user.1'</span>, { id: <span class="token-number">1</span>, role: <span class="token-string">'admin'</span> });
+</code></pre>
       </div>
+
     </div>
   </header>
 
-  <!-- Stats Grid (Bento) -->
-  <section class="section">
-    <div class="features-grid">
-      <!-- 800K Stat -->
-      <div class="feature-card featured animate-fade-up">
-        <h2 style="font-size: clamp(3rem, 6vw, 5rem); line-height: 1; margin-bottom: 0;">
-          800<span style="color: var(--acid-green)">K</span>
+  <!-- Scroll Triggers -->
+  <section class="section" style="position: relative; overflow: hidden;">
+    <div class="bg-text" style="top: 5%; left: -5%;">FAST</div>
+    <div class="bg-text" style="bottom: 10%; right: -5%;">SAFE</div>
+
+    <div class="feature-grid-parallax" style="position: relative; z-index: 1;">
+      <div class="feature-card featured animate-fade-up" style="grid-column: span 2; background: rgba(255, 255, 255, 0.03); border: 2px solid var(--acid-green-dim);">
+        <h2 style="font-size: clamp(4rem, 10vw, 12rem); line-height: 0.8; margin: 0; font-weight: 900;">
+          2M<span style="color: var(--acid-green); -webkit-text-stroke: 0;">+</span>
         </h2>
-        <p class="hero-stat-label" style="color: var(--acid-green);">OP/SEC ON POTATO HARDWARE</p>
+        <p class="hero-stat-label" style="color: var(--acid-green); font-size: 1.2rem; letter-spacing: 0.3em;">READ OPS / SEC</p>
+        <p class="feature-description" style="margin-top: 2rem; font-size: 1.2rem; max-width: 800px;">
+          Powered by a native <strong>Rust</strong> core via N-API. We bypass V8 serialization overhead to deliver performance that rivals embedded C++ engines.
+        </p>
       </div>
 
-      <!-- 0ms Latency -->
-      <div class="feature-card animate-fade-up">
-        <div class="feature-icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
-          </svg>
-        </div>
-        <h3>0<span style="font-size: 0.6em">ms</span></h3>
-        <p class="feature-description">Zero Serialization overhead via direct memory access.</p>
+      <div class="feature-card animate-fade-up glare-container">
+        <div class="glare"></div>
+        <div class="feature-icon" style="font-size: 2.5rem; margin-bottom: 1.5rem;">🧵</div>
+        <h3>Multi-Core Rayon™</h3>
+        <p class="feature-description">
+          Adaptive parallelism automatically scales with your CPU cores. Processing massive datasets is handled by Rust's Rayon ecosystem.
+        </p>
       </div>
 
-      <!-- Code Snippet -->
-      <div class="feature-card animate-fade-up">
-        <pre style="margin: 0; padding: 0; background: transparent; border: none; font-size: 0.75rem;"><code><span class="token-keyword">import</span> { DB } <span class="token-keyword">from</span> <span class="token-string">'jsondb'</span>;
-<span class="token-comment">// Typed & Fast</span>
-db.<span class="token-function">set</span>(<span class="token-string">'warp'</span>, <span class="token-number">9.9</span>);
-<span class="token-keyword">const</span> speed = db.<span class="token-function">get</span>(<span class="token-string">'warp'</span>);
-<span class="token-comment">>> 9.9</span></code></pre>
+      <div class="feature-card animate-fade-up glare-container">
+        <div class="glare"></div>
+        <div class="feature-icon" style="font-size: 2.5rem; margin-bottom: 1.5rem;">🏗️</div>
+        <h3>ACID Durability</h3>
+        <p class="feature-description">
+          <strong>Write-Ahead Logging (WAL)</strong> ensures data integrity. Group commits enable ~260k write ops/s without sacrificing safety.
+        </p>
+      </div>
+      
+      <div class="feature-card animate-fade-up glare-container">
+        <div class="glare"></div>
+        <div class="feature-icon" style="font-size: 2.5rem; margin-bottom: 1.5rem;">🔒</div>
+        <h3>Multi-Process Safe</h3>
+        <p class="feature-description">
+          OS-level advisory file locks prevent corruption. Run multiple Node.js workers on the same dataset fearlessly.
+        </p>
       </div>
 
-      <!-- 2M+ Stat -->
-      <div class="feature-card animate-fade-up">
-        <h3 style="font-size: 3rem; color: var(--acid-green); margin-bottom: 0;">2M+</h3>
-        <p class="hero-stat-label">CLOUD OP/SEC</p>
-      </div>
-
-      <!-- Type Safe -->
-      <div class="feature-card animate-fade-up">
-        <div class="feature-icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-          </svg>
-        </div>
-        <h3>Type-Safe</h3>
-        <p class="feature-description">Full TypeScript support out of the box.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- Why Not Just Map? -->
-  <section class="section">
-    <div class="hero-content" style="display: block; text-align: left; max-width: var(--max-width);">
-      <h2 style="font-size: 3rem; margin-bottom: var(--space-4);">
-        Why not just <span style="color: var(--acid-green)">Map()</span>?
-      </h2>
-      <p style="font-size: 1.1rem; color: var(--text-secondary); max-width: 600px; margin-bottom: var(--space-12);">
-        V8 heap memory is precious. Don't waste it on storage. We offload data to unmanaged Rust memory, keeping your GC pauses non-existent.
-      </p>
-
-      <div class="features-grid">
-        <div class="feature-card animate-fade-up">
-          <div class="feature-icon">💾</div>
-          <h3>Persisted Snapshots</h3>
-          <p class="feature-description">Dump to disk instantly. Binary format load times that feel illegal.</p>
-        </div>
-        
-        <div class="feature-card animate-fade-up">
-          <div class="feature-icon">⚛️</div>
-          <h3>Atomic Operations</h3>
-          <p class="feature-description">Thread-safe reads/writes via Rust RwLock. Concurrency without the headache.</p>
-        </div>
-
-        <div class="feature-card animate-fade-up">
-          <div class="feature-icon">🔎</div>
-          <h3>Query Engine</h3>
-          <p class="feature-description">Filter, map, and reduce in Rust space before data ever touches JS.</p>
-        </div>
-        
-         <div class="feature-card animate-fade-up">
-          <div class="feature-icon">📦</div>
-          <h3>Tiny Footprint</h3>
-          <p class="feature-description">&lt; 2MB binary size. Minimal overhead for maximum throughput.</p>
-        </div>
+      <div class="feature-card animate-fade-up glare-container">
+        <div class="glare"></div>
+        <div class="feature-icon" style="font-size: 2.5rem; margin-bottom: 1.5rem;">📦</div>
+        <h3>Zero Dependencies</h3>
+        <p class="feature-description">
+          No external database servers. No heavy binaries. Just a single self-contained native module that works out of the box.
+        </p>
       </div>
     </div>
   </section>
+  
+
 
   <!-- CTA Footer -->
-  <section class="section" style="text-align: center; padding: var(--space-24) var(--space-6);">
-    <h2 class="animate-fade-up">Ready to go <br><span class="text-outlined" style="font-size: 4rem; font-style: italic;">FAST?</span></h2>
-    <p class="animate-fade-up" style="margin: var(--space-6) auto; max-width: 500px;">
-      Join thousands of developers squeezing every ounce of performance out of their Node.js applications.
-    </p>
-    <div class="hero-cta animate-fade-up" style="justify-content: center;">
-      <a href="docs.html#quick-start" class="btn btn-primary">Start Building</a>
-      <a href="https://github.com/sethunthunder111/jsondb-high" target="_blank" class="btn btn-secondary">View on GitHub</a>
+  <section class="section" style="text-align: center; padding: 10rem 1rem;">
+    <h2 class="animate-fade-up" style="margin-bottom: 3rem; font-size: clamp(3rem, 8vw, 6rem); font-weight: 900;">Ready for <span class="text-outlined">HYPER</span> speed?</h2>
+    <div class="hero-cta animate-fade-up" style="justify-content: center; gap: 2rem;">
+      <a href="docs.html#quick-start" class="btn btn-primary" style="padding: 1.5rem 4rem; font-size: 1.2rem;">Start Building</a>
+      <a href="https://github.com/sethunthunder111/jsondb-high" target="_blank" class="btn btn-secondary" style="padding: 1.5rem 4rem; font-size: 1.2rem;">GitHub</a>
     </div>
   </section>
 
-  <!-- Footer -->
   <footer class="footer">
     <div class="footer-grid">
       <div>
@@ -202,16 +187,8 @@ db.<span class="token-function">set</span>(<span class="token-string">'warp'</sp
           <li><a href="https://www.npmjs.com/package/jsondb-high" target="_blank">NPM</a></li>
         </ul>
       </div>
-      <div>
-        <h4>Legal</h4>
-        <ul>
-          <li><a href="LICENSE">MIT License</a></li>
-        </ul>
-      </div>
     </div>
-    <div class="footer-bottom">
-      &copy; 2026 jsondb-high. Open source under MIT License.
-    </div>
+    <div class="footer-bottom">&copy; 2026 jsondb-high. Open source under MIT License.</div>
   </footer>
 
   <script src="main.js"></script>

@@ -764,6 +764,7 @@ private applyFilters(limit?: number): T[] {
         for (const key in items) {
             if (Object.prototype.hasOwnProperty.call(items, key)) {
                 const item = items[key];
+                if (item === undefined) continue;
                 let match = true;
                 for (const filter of this.filters) {
                     if (!filter(item)) {
@@ -997,8 +998,13 @@ export class JSONDatabase extends EventEmitter {
     private walFlushMs: number;
     private slowQueryThresholdMs: number;
 
-    constructor(private filePath: string, options: DBOptions = {}) {
+
+    private filePath: string;
+
+    constructor(filePath: string, options: DBOptions = {}) {
         super();
+        this.filePath = filePath;
+
         this.wal = options.wal ?? false;
         this.encryptionKey = options.encryptionKey;
         this.autoSaveInterval = options.autoSaveInterval ?? 1000;
@@ -1059,7 +1065,7 @@ export class JSONDatabase extends EventEmitter {
         process.on('beforeExit', () => this.close());
     }
 
-    private loadData(): void {
+    private loadData(forceReload: boolean = false): void {
         if (this.encryptionKey && existsSync(this.filePath)) {
             try {
                 const encrypted = readFileSync(this.filePath, 'utf8');
@@ -1081,16 +1087,10 @@ export class JSONDatabase extends EventEmitter {
                 // If decryption fails, might be first run or corrupted
                 this.native.load();
             }
-        } else {
-            // For restoreSnapshot to work, we must reload from disk.
-            // Since native.load() is a no-op in Rust, we explicitly re-create the native instance.
-            // Avoid doing this in constructor if possible, but safe to do idempotent re-creation.
-
-            // Note: If called from constructor, this.native is already created.
-            // If called from restoreSnapshot, we need to refresh it.
-
-            // To differentiate, we could check if we need to reload.
-            // But for simplicity, we just re-create if we can.
+        } else if (forceReload) {
+            // Only re-create the native instance when explicitly requested
+            // (e.g., from restoreSnapshot). During initial construction,
+            // the native instance is already properly created by the constructor.
 
             if (this.native && typeof this.native.close === 'function') {
                 this.native.close();
@@ -1858,7 +1858,7 @@ export class JSONDatabase extends EventEmitter {
             throw new Error(`Snapshot not found: ${snapshotPath}`);
         }
         copyFileSync(snapshotPath, this.filePath);
-        this.loadData();
+        this.loadData(true);
         this.rebuildIndices();
         this.emit('snapshot:restored', { path: snapshotPath });
     }

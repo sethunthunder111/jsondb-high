@@ -25,16 +25,23 @@
       gap: var(--space-6);
       max-width: var(--max-width);
       margin: 0 auto;
-      padding: 0 0 var(--space-24);
+      padding: 0 var(--space-4) var(--space-24);
+    }
+
+    .benchmark-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: var(--space-4);
+      margin-top: var(--space-12);
     }
 
     .bar-chart {
       display: flex;
-      align-items: flex-end;
+      align-items: stretch;
       justify-content: space-around;
       height: 200px;
       gap: var(--space-4);
-      padding-bottom: var(--space-8);
+      padding-bottom: 0;
       margin-top: var(--space-8);
     }
 
@@ -43,7 +50,9 @@
       display: flex;
       flex-direction: column;
       align-items: center;
+      justify-content: flex-end;
       gap: var(--space-2);
+      height: 100%;
     }
 
     .bar {
@@ -52,6 +61,7 @@
       opacity: 0.8;
       border-radius: 4px 4px 0 0;
       transition: height 1s ease-out;
+      min-height: 0;
     }
 
     .bar-label {
@@ -59,6 +69,8 @@
       color: var(--text-muted);
       font-family: var(--font-mono);
       text-transform: uppercase;
+      flex-shrink: 0;
+      padding-top: var(--space-2);
     }
 
     .horizontal-bar-container {
@@ -79,6 +91,7 @@
       font-size: 0.8rem;
       color: var(--text-muted);
       font-family: var(--font-mono);
+      flex-shrink: 0;
     }
 
     .horizontal-bar-track {
@@ -104,9 +117,36 @@
       transition: width 1s ease-out;
     }
     
+    @media (max-width: 1024px) {
+      .benchmark-stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    
     @media (max-width: 768px) {
       .benchmarks-grid {
         grid-template-columns: 1fr;
+      }
+      
+      .bar-chart {
+        height: 150px;
+      }
+      
+      .horizontal-bar-label {
+        width: 80px;
+        font-size: 0.7rem;
+      }
+      
+      .horizontal-bar-fill {
+        font-size: 0.7rem;
+        padding-right: 6px;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .benchmark-stats-grid {
+        grid-template-columns: 1fr;
+        gap: var(--space-4);
       }
     }
   </style>
@@ -135,14 +175,14 @@
 
   <!-- Hero -->
   <section class="hero" style="min-height: 50vh; align-items: flex-start;">
-    <div class="hero-content" style="display: block; text-align: center;">
+    <div class="hero-content" style="display: block; text-align: center; margin-top: 50px;">
       <span class="hero-badge">PERFORMANCE</span>
       <h1 class="hero-title">BENCHMARKS</h1>
       <p class="hero-subtitle" style="margin: 0 auto; max-width: 600px;">
         All benchmarks run with 10,000 iterations per test on a standard Linux x64 machine.
       </p>
 
-      <div class="features-grid" style="margin-top: var(--space-12); grid-template-columns: repeat(4, 1fr);">
+      <div class="benchmark-stats-grid">
         <div class="feature-card animate-fade-up">
           <h3 class="hero-stat-value">2M<span>+</span></h3>
           <p class="hero-stat-label">Reads/sec</p>
@@ -174,19 +214,19 @@
         </div>
         <div class="bar-chart">
           <div class="bar-item">
-            <div class="bar" style="height: 0;" data-height="76%"></div>
+            <div class="bar" style="height: 0;" data-height="35%"></div>
             <span class="bar-label">get</span>
           </div>
           <div class="bar-item">
-            <div class="bar" style="height: 0;" data-height="100%"></div>
+            <div class="bar" style="height: 0;" data-height="46%"></div>
             <span class="bar-label">get(wal)</span>
           </div>
           <div class="bar-item">
-            <div class="bar" style="height: 0;" data-height="195%"></div>
+            <div class="bar" style="height: 0;" data-height="90%"></div>
             <span class="bar-label">has</span>
           </div>
           <div class="bar-item">
-            <div class="bar" style="height: 0;" data-height="52%"></div>
+            <div class="bar" style="height: 0;" data-height="24%"></div>
             <span class="bar-label">index</span>
           </div>
         </div>
@@ -200,19 +240,19 @@
         </div>
         <div class="bar-chart">
           <div class="bar-item">
-            <div class="bar" style="height: 0;" data-height="78%"></div>
+            <div class="bar" style="height: 0;" data-height="72%"></div>
             <span class="bar-label">set</span>
           </div>
           <div class="bar-item">
-            <div class="bar" style="height: 0;" data-height="67%"></div>
+            <div class="bar" style="height: 0;" data-height="62%"></div>
             <span class="bar-label">nested</span>
           </div>
           <div class="bar-item">
-            <div class="bar" style="height: 0;" data-height="100%"></div>
+            <div class="bar" style="height: 0;" data-height="90%"></div>
             <span class="bar-label">math</span>
           </div>
           <div class="bar-item">
-            <div class="bar" style="height: 0;" data-height="97%"></div>
+            <div class="bar" style="height: 0;" data-height="89%"></div>
             <span class="bar-label">del</span>
           </div>
         </div>
@@ -317,37 +357,55 @@
   <script src="main.js"></script>
 
   <script>
-    // Specific animation logic for charts
+    // Chart animation — must wait for GSAP to reveal cards (opacity: 1) first
     document.addEventListener('DOMContentLoaded', () => {
-      const observer = new IntersectionObserver((entries) => {
+      function animateBarsInCard(card) {
+        // Animate vertical bars
+        const bars = card.querySelectorAll('.bar');
+        bars.forEach((bar, i) => {
+          setTimeout(() => {
+            bar.style.height = bar.dataset.height;
+          }, i * 100);
+        });
+
+        // Animate horizontal bars
+        const hBars = card.querySelectorAll('.horizontal-bar-fill');
+        hBars.forEach((bar, i) => {
+          setTimeout(() => {
+            bar.style.width = bar.dataset.width;
+          }, i * 150);
+        });
+      }
+
+      // Use IntersectionObserver but only trigger when the card is actually visible
+      const chartObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
           if (entry.isIntersecting) {
-            // Animate bars
-            const bars = entry.target.querySelectorAll('.bar');
-            if (bars.length) {
-              bars.forEach((bar, i) => {
-                setTimeout(() => {
-                  bar.style.height = bar.dataset.height;
-                }, i * 100);
+            const card = entry.target;
+            const style = window.getComputedStyle(card);
+            const opacity = parseFloat(style.opacity);
+            
+            if (opacity > 0.5) {
+              // Card is visible — animate now
+              animateBarsInCard(card);
+              chartObserver.unobserve(card);
+            } else {
+              // Card is still hidden by GSAP — wait for it to become visible
+              const mutObs = new MutationObserver(() => {
+                const currentOpacity = parseFloat(window.getComputedStyle(card).opacity);
+                if (currentOpacity > 0.5) {
+                  setTimeout(() => animateBarsInCard(card), 200);
+                  mutObs.disconnect();
+                  chartObserver.unobserve(card);
+                }
               });
+              mutObs.observe(card, { attributes: true, attributeFilter: ['style'] });
             }
-
-            // Animate horizontal bars
-            const hBars = entry.target.querySelectorAll('.horizontal-bar-fill');
-            if (hBars.length) {
-              hBars.forEach((bar, i) => {
-                setTimeout(() => {
-                  bar.style.width = bar.dataset.width;
-                }, i * 150);
-              });
-            }
-
-            observer.unobserve(entry.target);
           }
         });
       }, { threshold: 0.2 });
 
-      document.querySelectorAll('.feature-card').forEach(el => observer.observe(el));
+      document.querySelectorAll('.benchmarks-grid .feature-card').forEach(el => chartObserver.observe(el));
     });
   </script>
 </body>

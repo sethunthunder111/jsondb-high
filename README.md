@@ -1,12 +1,15 @@
 # jsondb-high 🚀
 
-A blazing fast, feature-rich JSON database for Node.js with a Rust-powered core via N-API.
+A blazing fast, feature-rich JSON database for Node.js with a Rust-powered native query engine via N-API.
 
 ## ✨ Features
 
-- ⚡ **Blazing Fast**: Core logic in Rust via N-API (~2M ops/s reads, ~260k ops/s writes)
+- ⚡ **Blazing Fast**: Native Rust query engine via N-API (~2.5M ops/s reads, ~510k ops/s writes)
+- 🔎 **Native Query Engine** *(v5.5)*: Full query pipeline in Rust — filter → sort → skip → limit → select in one call
+- 🧠 **Smart Memory Management** *(v5.5)*: LRU-based cold storage eviction with transparent restore on access
+- 🔐 **Striped Write Locks** *(v5.5)*: 64-stripe collection-level concurrency — writes to different collections proceed in parallel
 - 🔒 **Multi-Process Safe**: OS-level advisory file locking prevents data corruption across multiple processes
-- 🧵 **Multi-Core Processing**: Adaptive parallelism using Rayon - automatically scales with your CPU
+- 🧵 **Multi-Core Processing**: Adaptive parallelism using Rayon — automatically scales with your CPU
 - 🛡️ **Atomic Operations**: Group Commit Write-Ahead Logging (WAL) ensures ACID durability with near-zero overhead
 - 🔍 **O(1) Indexing**: In-memory Map indices for instant, constant-time lookups
 - 📝 **Schema Validation**: JSON Schema-like validation for data integrity (v5.1+)
@@ -76,9 +79,9 @@ const db = new JSONDatabase('db.json', {
 
 | Mode | Throughput | Latency | Durability Window |
 |------|------------|---------|-------------------|
-| `none` | ~260k ops/s | 0.003ms | Manual save only |
-| `lazy` | ~200k ops/s | 0.003ms | 100ms |
-| `batched`| ~240k ops/s | 5ms | 10ms (Recommended) |
+| `none` | ~545k ops/s | 0.002ms | Manual save only |
+| `lazy` | ~400k ops/s | 0.003ms | 100ms |
+| `batched`| ~525k ops/s | 0.002ms | 10ms (Recommended) |
 | `sync` | ~2k ops/s | 0.5ms | Immediate |
 
 ## 📝 Schema Validation (v5.1+)
@@ -407,6 +410,76 @@ const usersWithOrders = await db.parallelQuery('users', [])
 - **Resource-Aware**: Leaves 1 core free for system/main thread
 - **Scalable**: Performance scales linearly with available cores for large datasets
 
+## 🧠 Smart Memory Management (v5.5+)
+
+Automatically offload least-recently-used data to disk when memory limits are approached. Data is transparently restored on access.
+
+### Configuration
+
+```typescript
+const db = new JSONDatabase('db.json', {
+    memoryLimit: '512mb',        // Max memory (e.g. '256mb', '1gb')
+    coldStorageDir: './cold',    // Where offloaded data is stored
+    evictionThresholdPct: 80,    // Start evicting at 80% usage
+    evictionTargetPct: 60        // Evict until 60% usage
+});
+```
+
+### Manual Offload & Restore
+
+```typescript
+// Offload a collection to disk to free memory
+const id = await db.offload('largeCollection');
+
+// Data is automatically restored on access:
+const data = await db.get('largeCollection.key1'); // Transparent restore
+
+// Or manually restore:
+await db.restore('largeCollection');
+```
+
+### Memory Stats
+
+```typescript
+const stats = await db.memoryStats();
+console.log(stats);
+// {
+//   totalEstimatedBytes: 52428800,
+//   maxMemoryBytes: 536870912,
+//   coldKeysCount: 3,
+//   hotKeysCount: 12,
+//   utilizationPct: 10
+// }
+
+// Manually trigger eviction check
+const evicted = await db.checkMemoryPressure();
+console.log('Evicted keys:', evicted);
+```
+
+### How It Works
+
+- **LRU Eviction**: Least-recently-accessed collections are evicted first
+- **Per-Key Size Estimation**: Tracks estimated memory per top-level key
+- **Transparent Restore**: `get()` automatically restores cold data on access
+- **Cold File Storage**: Evicted data is written as JSON to disk, deleted on restore
+
+## 🔐 Striped Write Locks (v5.5+)
+
+Writes to different top-level collections proceed concurrently using a 64-stripe lock manager.
+
+```typescript
+// These writes can run in parallel because they target different collections
+await Promise.all([
+    db.set('users.1', { name: 'Alice' }),
+    db.set('orders.1', { total: 99 }),
+    db.set('logs.1', { event: 'login' }),
+]);
+```
+
+- **64 Lock Stripes**: Collection keys are hashed to stripes for concurrent access
+- **Deadlock-Free Batch Locking**: Batch operations sort stripe indices before acquisition
+- **Zero Contention on Reads**: Readers never block writers
+
 ### 🔒 Transactions
 
 Atomic read-modify-write with automatic rollback on error.
@@ -583,28 +656,47 @@ bun run build:debug
 
 ## 📊 Performance Benchmarks
 
-> See [benchmarks/RESULTS.md](./benchmarks/RESULTS.md) for detailed benchmark data.
+> See [benchmarks/RESULTS.md](./benchmarks/RESULTS.md) and [benchmarks/RESULTS_V55.md](./benchmarks/RESULTS_V55.md) for detailed benchmark data.
 
-| Operation         | In-Memory Mode  | WAL (Batched)   | Avg Latency   |
-| ----------------- | --------------- | --------------- | ------------- |
-| set (simple)      | 266,567 ops/s   | 244,557 ops/s   | 0.0038ms      |
-| set (nested)      | 229,894 ops/s   | 241,600 ops/s   | 0.0043ms      |
-| get (existing)    | 762,585 ops/s   | 992,655 ops/s   | 0.0013ms      |
-| has (missing)     | 1,938,518 ops/s | 1,729,562 ops/s | 0.0005ms      |
-| delete            | 331,851 ops/s   | 321,576 ops/s   | 0.0030ms      |
-| add/subtract      | 334,696 ops/s   | 340,233 ops/s   | 0.0030ms      |
-| findByIndex       | 511,932 ops/s   | 451,284 ops/s   | 0.0020ms      |
-| batch (10 ops)    | 187,280 ops/s   | 151,731 ops/s   | 0.0053ms      |
-| query.where()     | 1,104 ops/s     | 1,061 ops/s     | 0.91ms        |
-| parallelQuery     | 50,000+ ops/s   | 50,000+ ops/s   | <0.02ms       |
+### Core CRUD
+
+| Operation         | In-Memory Mode    | WAL (Batched)     | Avg Latency   |
+| ----------------- | ----------------- | ----------------- | ------------- |
+| set (simple)      | 545,512 ops/s     | 525,713 ops/s     | 0.0018ms      |
+| set (nested)      | 484,991 ops/s     | 408,078 ops/s     | 0.0021ms      |
+| get (existing)    | 1,181,674 ops/s   | 1,298,581 ops/s   | 0.0008ms      |
+| has (existing)    | 2,301,343 ops/s   | 2,380,147 ops/s   | 0.0004ms      |
+| has (missing)     | 2,643,143 ops/s   | 2,580,611 ops/s   | 0.0004ms      |
+| delete            | 621,390 ops/s     | 560,561 ops/s     | 0.0016ms      |
+| add/subtract      | 614,138 ops/s     | 571,588 ops/s     | 0.0016ms      |
+| findByIndex       | 696,810 ops/s     | 639,626 ops/s     | 0.0014ms      |
+| batch (10 ops)    | 264,029 ops/s     | 178,946 ops/s     | 0.0038ms      |
+
+### v5.5 Native Query Engine
+
+| Operation                          | 1K Dataset   | 10K Dataset  | 50K Dataset  |
+| ---------------------------------- | ------------ | ------------ | ------------ |
+| Native: where(age > 30)            | 971 ops/s    | 104 ops/s    | 17 ops/s     |
+| Native: multi-filter+sort+limit    | 6,625 ops/s  | 1,116 ops/s  | 214 ops/s    |
+| Native: filter+select(3 fields)    | 10,594 ops/s | 3,656 ops/s  | 1,426 ops/s  |
+| JS Fallback: filter(fn)            | 519 ops/s    | 39 ops/s     | 5 ops/s      |
+
+### v5.5 Concurrent Write Scaling
+
+| Test                                          | Ops/s     | Avg Latency |
+| --------------------------------------------- | --------- | ----------- |
+| Sequential writes (same collection)           | 427,333   | 0.0023ms    |
+| Concurrent 10 writes (different collections)  | 44,174    | 0.0226ms    |
+| Batch mixed (100 ops, 10 collections)         | 10,968    | 0.0912ms    |
 
 ### Key Insights
 
-- **Read operations** (`get`, `has`) are now near-instant (~2M ops/s) thanks to zero-copy lookups. 🔥
-- **Group Commit WAL** allows v4.5 to maintain ~240k write ops/s even with full ACID durability.
-- **Lock-Free Architecture** ensures readers never block writers, maximizing multicore efficiency.
-- **Index lookups** provide O(1) performance regardless of dataset size.
-- **Parallel queries** offer 10-50x speedup for large datasets using all CPU cores.
+- **Read operations** (`get`, `has`) are now near-instant (~2.5M ops/s) thanks to zero-copy lookups. 🔥
+- **Write throughput doubled** in v5.5 (~545k ops/s vs ~260k in v4.x) with striped write locks.
+- **Native query engine** runs filter+select at **10,594 ops/s** — up to **20x faster** than JS fallback.
+- **Group Commit WAL** maintains ~525k write ops/s with full ACID durability.
+- **Smart memory management** transparently offloads cold data with sub-ms restore latency.
+- **Index lookups** provide O(1) performance regardless of dataset size (~700k ops/s).
 
 ## 📄 License
 
