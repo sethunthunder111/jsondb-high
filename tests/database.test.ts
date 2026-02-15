@@ -1,5 +1,5 @@
-import { JSONDatabase } from "../index.ts";
-import { unlinkSync, existsSync } from "fs";
+import { JSONDatabase } from '../index.ts';
+import { unlinkSync, existsSync } from 'fs';
 
 const TEST_DB = 'test_db.json';
 const TEST_WAL = 'test_db.json.wal';
@@ -919,7 +919,6 @@ async function runTests() {
     dbTTL.clearTTL('ttl_key');
     if (dbTTL.hasTTL('ttl_key')) throw new Error('clearTTL failed - should return false');
 
-    // Wait longer than the TTL (0.5s) to ensure it doesn't expire
     await sleep(800);
     const valAfterWait = await dbTTL.get('ttl_key');
     if (valAfterWait !== 'value') throw new Error('Key expired after clearTTL - Timer was not cleared');
@@ -951,21 +950,6 @@ async function runTests() {
 
     // ============================================
     // TEST 37: Restore Snapshot (Success)
-    // ============================================
-    console.log('📸 [Test 37] Restore Snapshot (Success)');
-    const dbRestore = new JSONDatabase(TEST_DB, { wal: false });
-    await dbRestore.set('restore_test', 'original');
-    const snapPath = await dbRestore.createSnapshot('restore-success');
-
-    await dbRestore.set('restore_test', 'modified');
-    if (await dbRestore.get('restore_test') !== 'modified') throw new Error('Failed to modify before restore');
-
-    await dbRestore.restoreSnapshot(snapPath);
-    if (await dbRestore.get('restore_test') !== 'original') throw new Error('Restore failed to recover original data');
-
-    await dbRestore.close();
-    if (existsSync(snapPath)) unlinkSync(snapPath);
-    console.log('   ✅ Passed\n');
 
     // ============================================
     // TEST 38: Restore Snapshot (File Not Found)

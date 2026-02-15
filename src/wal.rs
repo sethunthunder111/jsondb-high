@@ -18,6 +18,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::io;
+use rayon::prelude::*;
 
 /// WAL operation types
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -42,6 +43,10 @@ pub enum WalCmd {
     #[allow(dead_code)]
     Shutdown,
 }
+
+/// Maximum allowed size for a single WAL entry (128 MB)
+/// This prevents OOM attacks from malicious/corrupted WAL files
+const MAX_WAL_ENTRY_SIZE: u32 = 128 * 1024 * 1024;
 
 /// WAL configuration
 #[derive(Clone, Copy)]
@@ -210,23 +215,50 @@ impl GroupCommitWAL {
     ) {
         let mut buf = Vec::with_capacity(batch.len() * 256);
         let mut max_lsn = 0u64;
-        
-        for (lsn, op) in batch {
-            // Serialize operation
-            let data = match serde_json::to_vec(op) {
-                Ok(d) => d,
-                Err(_) => continue,
-            };
-            
-            let crc = crc32fast::hash(&data);
-            
-            // Write: [LSN:8][CRC:4][LEN:4][DATA]
-            buf.extend_from_slice(&lsn.to_le_bytes());
-            buf.extend_from_slice(&crc.to_le_bytes());
-            buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
-            buf.extend_from_slice(&data);
-            
-            max_lsn = *lsn;
+
+        // Parallel serialization and CRC calculation
+        // We only parallelize if batch size is large enough to justify overhead
+        if batch.len() >= 500 {
+            let serialized: Vec<Option<(u64, u32, Vec<u8>)>> = batch
+                .par_iter()
+                .map(|(lsn, op)| match serde_json::to_vec(op) {
+                    Ok(data) => {
+                        let crc = crc32fast::hash(&data);
+                        Some((*lsn, crc, data))
+                    }
+                    Err(_) => None,
+                })
+                .collect();
+
+            for item in serialized {
+                if let Some((lsn, crc, data)) = item {
+                    // Write: [LSN:8][CRC:4][LEN:4][DATA]
+                    buf.extend_from_slice(&lsn.to_le_bytes());
+                    buf.extend_from_slice(&crc.to_le_bytes());
+                    buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
+                    buf.extend_from_slice(&data);
+
+                    max_lsn = lsn;
+                }
+            }
+        } else {
+            // Sequential fallback (avoids intermediate allocation overhead)
+            for (lsn, op) in batch {
+                let data = match serde_json::to_vec(op) {
+                    Ok(d) => d,
+                    Err(_) => continue,
+                };
+
+                let crc = crc32fast::hash(&data);
+
+                // Write: [LSN:8][CRC:4][LEN:4][DATA]
+                buf.extend_from_slice(&lsn.to_le_bytes());
+                buf.extend_from_slice(&crc.to_le_bytes());
+                buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
+                buf.extend_from_slice(&data);
+
+                max_lsn = *lsn;
+            }
         }
         
         // Single write syscall
@@ -271,6 +303,11 @@ pub fn recover_from_wal(wal_path: &str, data: &mut Value) -> io::Result<u64> {
         let crc = u32::from_le_bytes([header[8], header[9], header[10], header[11]]);
         let len = u32::from_le_bytes([header[12], header[13], header[14], header[15]]);
         
+        if len > MAX_WAL_ENTRY_SIZE {
+            eprintln!("WAL entry too large at LSN {}: {} bytes (max {})", lsn, len, MAX_WAL_ENTRY_SIZE);
+            break;
+        }
+
         // Read data
         let mut data_buf = vec![0u8; len as usize];
         if file.read_exact(&mut data_buf).is_err() {
