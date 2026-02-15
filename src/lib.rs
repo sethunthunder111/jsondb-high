@@ -78,28 +78,6 @@ impl ThreadPoolConfig {
         }
     }
     
-    #[allow(dead_code)]
-    /// Get optimal parallelism level based on workload size and system resources
-    fn optimal_threads(&self, workload_size: usize) -> usize {
-        if !self.use_parallel || workload_size < 100 {
-            // Small workloads don't benefit from parallelism
-            return 1;
-        }
-        
-        // Use cores proportional to workload, but leave 1-2 cores free
-        let max_threads = (self.available_cores - 1).max(1);
-        
-        // Scale threads based on workload
-        // Small: 1 thread, Medium: half cores, Large: max cores
-        if workload_size < 1000 {
-            (max_threads / 2).max(1)
-        } else if workload_size < 10000 {
-            (max_threads * 3 / 4).max(1)
-        } else {
-            max_threads
-        }
-    }
-    
     /// Should we use parallel processing for this workload?
     fn should_parallelize(&self, workload_size: usize) -> bool {
         self.use_parallel && workload_size >= 100
@@ -456,6 +434,15 @@ impl NativeDB {
 
     // --- Logic Helpers ---
 
+    /// Helper to convert dot-notation path to JSON pointer
+    fn normalize_path(path: &str) -> String {
+        if path.starts_with('/') {
+            path.to_string()
+        } else {
+            format!("/{}", path.replace(".", "/"))
+        }
+    }
+
     fn set_value_at_path(root: &mut Value, path_str: &str, value: Value) -> Result<()> {
         if path_str.is_empty() {
             *root = value;
@@ -559,7 +546,7 @@ impl NativeDB {
     }
 
     fn push_value_at_path(root: &mut Value, path_str: &str, value: Value) -> Result<()> {
-        let ptr = if path_str.starts_with('/') { path_str.to_string() } else { format!("/{}", path_str.replace(".", "/")) };
+        let ptr = Self::normalize_path(path_str);
         
         if let Some(target) = root.pointer_mut(&ptr) {
             if let Value::Array(arr) = target {
@@ -584,63 +571,46 @@ impl NativeDB {
     #[napi]
     pub fn batch_set_parallel(&self, operations: Vec<(String, Value)>) -> Result<ParallelResult> {
         let count = operations.len();
-        
-        if THREAD_CONFIG.should_parallelize(count) {
-            // Pre-validate paths in parallel
-            let validation_results: Vec<bool> = operations
-                .par_iter()
-                .map(|(path, _)| !path.is_empty())
-                .collect();
-            
-            if validation_results.iter().any(|&v| !v) {
-                return Ok(ParallelResult {
-                    success: false,
-                    count: 0,
-                    error: Some("Invalid path in batch".to_string()),
-                });
-            }
-            
-            // Apply all operations (requires sequential write lock)
-            let mut data = self.data.write();
-            let mut success_count = 0u32;
-            
-            for (path, value) in operations {
-                let _ = self.append_wal(WalOpType::Set, &path, Some(value.clone()));
-                if Self::set_value_at_path(&mut data, &path, value).is_ok() {
-                    success_count += 1;
-                }
-            }
-            
-            Ok(ParallelResult {
-                success: true,
-                count: success_count,
-                error: None,
-            })
+        let use_parallel = THREAD_CONFIG.should_parallelize(count);
+
+        // Pre-validate paths
+        let has_invalid = if use_parallel {
+            operations.par_iter().any(|(path, _)| path.is_empty())
         } else {
-            // Sequential fallback
-            let mut data = self.data.write();
-            let mut success_count = 0u32;
-            
-            for (path, value) in operations {
-                let _ = self.append_wal(WalOpType::Set, &path, Some(value.clone()));
-                if Self::set_value_at_path(&mut data, &path, value).is_ok() {
-                    success_count += 1;
-                }
-            }
-            
-            Ok(ParallelResult {
-                success: true,
-                count: success_count,
-                error: None,
-            })
+            operations.iter().any(|(path, _)| path.is_empty())
+        };
+
+        if has_invalid {
+            return Ok(ParallelResult {
+                success: false,
+                count: 0,
+                error: Some("Invalid path in batch".to_string()),
+            });
         }
+
+        // Apply all operations (requires sequential write lock)
+        let mut data = self.data.write();
+        let mut success_count = 0u32;
+
+        for (path, value) in operations {
+            let _ = self.append_wal(WalOpType::Set, &path, Some(value.clone()));
+            if Self::set_value_at_path(&mut data, &path, value).is_ok() {
+                success_count += 1;
+            }
+        }
+
+        Ok(ParallelResult {
+            success: true,
+            count: success_count,
+            error: None,
+        })
     }
 
     /// Parallel filter/query on a collection
     #[napi]
     pub fn parallel_query(&self, path: String, filters: Vec<QueryFilter>) -> Result<Value> {
         let data = self.data.read();
-        let ptr = if path.starts_with('/') { path } else { format!("/{}", path.replace(".", "/")) };
+        let ptr = Self::normalize_path(&path);
         
         let collection = if ptr == "/" || ptr.is_empty() {
             Some(&*data)
@@ -818,7 +788,7 @@ impl NativeDB {
     #[napi]
     pub fn parallel_aggregate(&self, path: String, operation: String, field: Option<String>) -> Result<Value> {
         let data = self.data.read();
-        let ptr = if path.starts_with('/') { path } else { format!("/{}", path.replace(".", "/")) };
+        let ptr = Self::normalize_path(&path);
         
         let collection = if ptr == "/" || ptr.is_empty() {
             Some(&*data)
@@ -919,7 +889,7 @@ impl NativeDB {
 
         // Helper to get collection items
         let get_items = |path: &str| -> Option<Vec<&Value>> {
-            let ptr = if path.starts_with('/') { path.to_string() } else { format!("/{}", path.replace(".", "/")) };
+            let ptr = Self::normalize_path(path);
             let collection = if ptr == "/" || ptr.is_empty() {
                 Some(&*data)
             } else {
@@ -952,50 +922,46 @@ impl NativeDB {
 
         // Probe with left collection
         let results: Vec<Value> = if THREAD_CONFIG.should_parallelize(left_items.len()) {
-            left_items.par_iter().map(|left_item| {
-                let mut joined = (*left_item).clone();
-                if let Value::Object(ref mut map) = joined {
-                    let mut matches_curr = Vec::new();
-                    if let Some(val) = self.get_value_at_field(left_item, &left_field) {
-                        let key = match val {
-                            Value::String(s) => s.clone(),
-                            _ => val.to_string(),
-                        };
-                        
-                        if let Some(matches) = hash_table.get(&key) {
-                            for m in matches {
-                                matches_curr.push((*m).clone());
-                            }
-                        }
-                    }
-                    map.insert(as_field.clone(), Value::Array(matches_curr));
-                }
-                joined
-            }).collect()
+            left_items
+                .par_iter()
+                .map(|left_item| self.join_item(left_item, &left_field, &as_field, &hash_table))
+                .collect()
         } else {
-             left_items.iter().map(|left_item| {
-                let mut joined = (*left_item).clone();
-                if let Value::Object(ref mut map) = joined {
-                    let mut matches_curr = Vec::new();
-                    if let Some(val) = self.get_value_at_field(left_item, &left_field) {
-                        let key = match val {
-                            Value::String(s) => s.clone(),
-                            _ => val.to_string(),
-                        };
-                        
-                        if let Some(matches) = hash_table.get(&key) {
-                            for m in matches {
-                                matches_curr.push((*m).clone());
-                            }
-                        }
-                    }
-                    map.insert(as_field.clone(), Value::Array(matches_curr));
-                }
-                joined
-            }).collect()
+            left_items
+                .iter()
+                .map(|left_item| self.join_item(left_item, &left_field, &as_field, &hash_table))
+                .collect()
         };
 
         Ok(Value::Array(results))
+    }
+
+    /// Helper for parallel_lookup to join a single item
+    fn join_item(
+        &self,
+        left_item: &Value,
+        left_field: &str,
+        as_field: &str,
+        hash_table: &HashMap<String, Vec<&Value>>,
+    ) -> Value {
+        let mut joined = left_item.clone();
+        if let Value::Object(ref mut map) = joined {
+            let mut matches_curr = Vec::new();
+            if let Some(val) = self.get_value_at_field(left_item, left_field) {
+                let key = match val {
+                    Value::String(s) => s.clone(),
+                    _ => val.to_string(),
+                };
+
+                if let Some(matches) = hash_table.get(&key) {
+                    for m in matches {
+                        matches_curr.push((*m).clone());
+                    }
+                }
+            }
+            map.insert(as_field.to_string(), Value::Array(matches_curr));
+        }
+        joined
     }
 
     /// Helper to get arbitrary field value (supports dot notation)
@@ -1062,7 +1028,7 @@ impl NativeDB {
         if path.is_empty() {
             return Ok(data.clone());
         }
-        let ptr = if path.starts_with('/') { path } else { format!("/{}", path.replace(".", "/")) };
+        let ptr = Self::normalize_path(&path);
         match data.pointer(&ptr) {
             Some(v) => Ok(v.clone()),
             None => Ok(Value::Null), 
@@ -1086,7 +1052,7 @@ impl NativeDB {
     #[napi]
     pub fn has(&self, path: String) -> Result<bool> {
         let data = self.data.read();
-        let ptr = if path.starts_with('/') { path } else { format!("/{}", path.replace(".", "/")) };
+        let ptr = Self::normalize_path(&path);
         Ok(data.pointer(&ptr).is_some())
     }
     
