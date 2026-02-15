@@ -40,8 +40,6 @@ pub enum WalCmd {
     Write { lsn: u64, op: WalOp },
     Sync { tx: std::sync::mpsc::Sender<()> },
     #[allow(dead_code)]
-    Flush,
-    #[allow(dead_code)]
     Shutdown,
 }
 
@@ -117,15 +115,6 @@ impl GroupCommitWAL {
         Ok(())
     }
     
-    /// Force immediate flush
-    #[allow(dead_code)]
-    /// Force immediate flush
-    pub fn flush(&self) -> io::Result<()> {
-        self.cmd_tx.send(WalCmd::Flush)
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "WAL thread stopped"))?;
-        Ok(())
-    }
-    
     /// Get last committed LSN
     pub fn committed_lsn(&self) -> u64 {
         self.committed_lsn.load(Ordering::Acquire)
@@ -181,13 +170,6 @@ impl GroupCommitWAL {
                             last_flush = Instant::now();
                         }
                         let _ = tx.send(());
-                    }
-                    Ok(WalCmd::Flush) => {
-                        if !batch.is_empty() {
-                            Self::flush_batch(&mut writer, &batch, &committed_lsn, config.fsync);
-                            batch.clear();
-                            last_flush = Instant::now();
-                        }
                     }
                     Ok(WalCmd::Shutdown) => {
                         // Final flush and exit
