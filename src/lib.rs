@@ -952,50 +952,46 @@ impl NativeDB {
 
         // Probe with left collection
         let results: Vec<Value> = if THREAD_CONFIG.should_parallelize(left_items.len()) {
-            left_items.par_iter().map(|left_item| {
-                let mut joined = (*left_item).clone();
-                if let Value::Object(ref mut map) = joined {
-                    let mut matches_curr = Vec::new();
-                    if let Some(val) = self.get_value_at_field(left_item, &left_field) {
-                        let key = match val {
-                            Value::String(s) => s.clone(),
-                            _ => val.to_string(),
-                        };
-                        
-                        if let Some(matches) = hash_table.get(&key) {
-                            for m in matches {
-                                matches_curr.push((*m).clone());
-                            }
-                        }
-                    }
-                    map.insert(as_field.clone(), Value::Array(matches_curr));
-                }
-                joined
-            }).collect()
+            left_items
+                .par_iter()
+                .map(|left_item| self.join_item(left_item, &left_field, &as_field, &hash_table))
+                .collect()
         } else {
-             left_items.iter().map(|left_item| {
-                let mut joined = (*left_item).clone();
-                if let Value::Object(ref mut map) = joined {
-                    let mut matches_curr = Vec::new();
-                    if let Some(val) = self.get_value_at_field(left_item, &left_field) {
-                        let key = match val {
-                            Value::String(s) => s.clone(),
-                            _ => val.to_string(),
-                        };
-                        
-                        if let Some(matches) = hash_table.get(&key) {
-                            for m in matches {
-                                matches_curr.push((*m).clone());
-                            }
-                        }
-                    }
-                    map.insert(as_field.clone(), Value::Array(matches_curr));
-                }
-                joined
-            }).collect()
+            left_items
+                .iter()
+                .map(|left_item| self.join_item(left_item, &left_field, &as_field, &hash_table))
+                .collect()
         };
 
         Ok(Value::Array(results))
+    }
+
+    /// Helper for parallel_lookup to join a single item
+    fn join_item(
+        &self,
+        left_item: &Value,
+        left_field: &str,
+        as_field: &str,
+        hash_table: &HashMap<String, Vec<&Value>>,
+    ) -> Value {
+        let mut joined = left_item.clone();
+        if let Value::Object(ref mut map) = joined {
+            let mut matches_curr = Vec::new();
+            if let Some(val) = self.get_value_at_field(left_item, left_field) {
+                let key = match val {
+                    Value::String(s) => s.clone(),
+                    _ => val.to_string(),
+                };
+
+                if let Some(matches) = hash_table.get(&key) {
+                    for m in matches {
+                        matches_curr.push((*m).clone());
+                    }
+                }
+            }
+            map.insert(as_field.to_string(), Value::Array(matches_curr));
+        }
+        joined
     }
 
     /// Helper to get arbitrary field value (supports dot notation)
