@@ -1,5 +1,6 @@
 import { join } from 'path';
 import { existsSync, copyFileSync, writeFileSync, readFileSync } from 'fs';
+import { copyFile } from 'fs/promises';
 import { EventEmitter } from 'events';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
 import { performance } from 'perf_hooks';
@@ -1487,7 +1488,7 @@ export class JSONDatabase extends EventEmitter {
         await this.save();
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const backupPath = `${this.filePath}.${name}.${timestamp}.bak`;
-        copyFileSync(this.filePath, backupPath);
+        await copyFile(this.filePath, backupPath);
         this.emit('snapshot:created', { path: backupPath, name });
         return backupPath;
     }
