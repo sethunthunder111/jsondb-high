@@ -787,7 +787,7 @@ private applyFilters(limit?: number): T[] {
         let usedIndex = false;
         let usedNativeEngine = false;
 
-        // ===== STRATEGY 1: Index Lookup (fastest for eq on indexed fields) =====
+        // ===== STRATEGY 1: Index Lookup (fastest for eq/range on indexed fields) =====
         if (this.db && this.queryFilters.length > 0) {
             for (const f of this.queryFilters) {
                 if (f.op === 'eq') {
@@ -795,9 +795,27 @@ private applyFilters(limit?: number): T[] {
                     if (index) {
                         const paths = (this.db as any).native.findIndexPaths(index.name, f.value);
                         if (paths) {
-                            const indexedItems = await Promise.all(paths.map((p: string) => this.db.get<T>(p)));
-                            result = indexedItems.filter(x => x !== null) as T[];
+                            const indexedItems = await this.db.getMany<T>(paths);
+                            result = indexedItems.filter((x): x is T => x !== null && x !== undefined);
                             usedIndex = true;
+                            break;
+                        }
+                    }
+                } else if (['gt', 'gte', 'lt', 'lte'].includes(f.op)) {
+                    const index = (this.db as any).indices.find((idx: any) => idx.path === this.path && idx.field === f.field);
+                    if (index && typeof (this.db as any).native.findIndexRange === 'function') {
+                        let start = null;
+                        let end = null;
+                        
+                        if (f.op === 'gt' || f.op === 'gte') start = f.value;
+                        if (f.op === 'lt' || f.op === 'lte') end = f.value;
+                        
+                        const paths = (this.db as any).native.findIndexRange(index.name, start, end);
+                        if (paths) {
+                            const indexedItems = await this.db.getMany<T>(paths);
+                            result = indexedItems.filter((x): x is T => x !== null && x !== undefined);
+                            usedIndex = true;
+                            // We break here. Note that JS filters will still apply strictness (gt vs gte)
                             break;
                         }
                     }
@@ -1412,6 +1430,15 @@ export class JSONDatabase extends EventEmitter {
         }
         
         return (val === null || val === undefined ? defaultValue : val) as T;
+    }
+
+    public async getMany<T = unknown>(paths: string[]): Promise<(T | null)[]> {
+        if (typeof this.native.getMany === 'function') {
+            const results = this.native.getMany(paths);
+            // Note: Does not currently handle cold storage restoration for batch get
+            return results as (T | null)[];
+        }
+        return Promise.all(paths.map(p => this.get<T>(p)));
     }
 
     /**

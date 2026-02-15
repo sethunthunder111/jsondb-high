@@ -1165,6 +1165,25 @@ impl NativeDB {
             None => Ok(Value::Null), 
         }
     }
+    
+    #[napi]
+    pub fn get_many(&self, paths: Vec<String>) -> Result<Vec<Value>> {
+        let data = self.data.read();
+        let mut results = Vec::with_capacity(paths.len());
+        
+        for path in paths {
+            if path.is_empty() {
+                results.push(data.clone());
+                continue;
+            }
+            let ptr = Self::normalize_path(&path);
+            match data.pointer(&ptr) {
+                Some(v) => results.push(v.clone()),
+                None => results.push(Value::Null),
+            }
+        }
+        Ok(results)
+    }
 
     #[napi]
     pub fn set(&self, path: String, value: Value) -> Result<()> {
@@ -1716,6 +1735,15 @@ impl NativeDB {
              idx.clear();
          }
          Ok(())
+    }
+
+    #[napi]
+    pub fn find_index_range(&self, name: String, start: Option<Value>, end: Option<Value>) -> Result<Vec<String>> {
+        let indexes = self.indexes.read();
+        if let Some(idx) = indexes.get(&name) {
+            return Ok(idx.range(start.as_ref(), end.as_ref()));
+        }
+        Ok(vec![])
     }
 
     // Schema API

@@ -223,7 +223,10 @@ async function runIndexBenchmarks(mode: string) {
     cleanup();
     const db = new JSONDatabase(DB_FILE, {
         wal: mode === 'WAL',
-        indices: [{ name: 'email', path: 'indexed_users', field: 'email' }]
+        indices: [
+            { name: 'email', path: 'indexed_users', field: 'email' },
+            { name: 'id', path: 'indexed_users', field: 'id' }
+        ]
     });
 
     // Setup indexed data
@@ -236,8 +239,13 @@ async function runIndexBenchmarks(mode: string) {
     }
     db.rebuildIndex();
 
-    await benchmark(`findByIndex`, mode, ITERATIONS, async () => {
+    await benchmark(`findByIndex (exact)`, mode, ITERATIONS, async () => {
         await db.findByIndex('email', 'user500@example.com');
+    });
+
+    await benchmark(`findByIndex (range)`, mode, ITERATIONS / 10, async () => {
+        // Should use the index on 'id' for O(logN) lookup + fetch
+        await db.query('indexed_users').where('id').gt(900).exec();
     });
 
     await db.close();
