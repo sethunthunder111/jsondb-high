@@ -757,10 +757,37 @@ async function runTests() {
     if (existsSync(TEST_DB + '.schema.wal')) unlinkSync(TEST_DB + '.schema.wal');
     console.log('   ✅ Passed\n');
 
+
     // ============================================
-    // TEST 33: Nested Transactions
+    // TEST 33: Clear Data
     // ============================================
-    console.log('🔄 [Test 33] Nested Transactions');
+    console.log('🧹 [Test 33] Clear Data');
+    const dbClear = new JSONDatabase(TEST_DB + '.clear', { wal: false });
+    await dbClear.set('user.name', 'Alice');
+    await dbClear.set('config', { theme: 'dark' });
+
+    // Verify data exists
+    const dataBeforeClear = await dbClear.get('');
+    if (Object.keys(dataBeforeClear as object).length === 0) {
+        throw new Error('Data should not be empty before clear');
+    }
+
+    // Clear data
+    await dbClear.clear();
+
+    // Verify data is empty
+    const dataAfterClear = await dbClear.get('');
+    console.log('   Data after clear:', dataAfterClear);
+    if (Object.keys(dataAfterClear as object).length !== 0) {
+        throw new Error('Data should be empty after clear');
+    }
+
+    await dbClear.close();
+    if (existsSync(TEST_DB + '.clear')) unlinkSync(TEST_DB + '.clear');
+    // ============================================
+    // TEST 34: Nested Transactions
+    // ============================================
+    console.log('🔄 [Test 34] Nested Transactions');
     const dbNested = new JSONDatabase(TEST_DB, { wal: false });
 
     // Initial state
@@ -830,9 +857,9 @@ async function runTests() {
     if (bank.alice !== 100 || bank.bob !== 100) throw new Error('Outer rollback failed');
 
     await dbNested.close();
-    // TEST 34: Enhanced TTL Features
+    // TEST 35: Enhanced TTL Features
     // ============================================
-    console.log('⏱️  [Test 34] Enhanced TTL Features');
+    console.log('⏱️  [Test 35] Enhanced TTL Features');
     const dbTTL = new JSONDatabase(TEST_DB + '_ttl', { wal: false });
 
     // 1. setTTL on existing key (using fractional seconds for speed)
