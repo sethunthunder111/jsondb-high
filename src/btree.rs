@@ -6,10 +6,6 @@ use std::io::{self, BufReader, BufWriter};
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
 
-// Simple Persistent B-Tree Index (In-Memory BTreeMap backed by disk)
-// This solves the startup time issue by loading pre-computed indexes.
-// It matches the "in-memory speed" philosophy.
-
 #[derive(Debug)]
 pub enum IndexError {
     Io(io::Error),
@@ -57,7 +53,6 @@ pub enum IndexKey {
 struct BTreeIndexFile {
     name: String,
     field: String,
-    // Store map as list of tuples to handle non-string keys in JSON
     map: Vec<(IndexKey, Vec<String>)>,
     reverse_map: Vec<(String, IndexKey)>,
 }
@@ -99,7 +94,6 @@ impl BTreeIndex {
             let file = File::open(p)?;
             let reader = BufReader::new(file);
 
-            // Try to load new format
             match serde_json::from_reader::<_, BTreeIndexFile>(reader) {
                 Ok(dto) => {
                     let mut map = BTreeMap::new();
@@ -122,10 +116,6 @@ impl BTreeIndex {
                     })
                 },
                 Err(_) => {
-                    // Failed to load (likely old format or corrupt)
-                    // Delete the file and return new empty index
-                    // This triggers a rebuild in the upper layer (TypeScript)
-                    // Note: reader consumed file, so it should be closed.
                     let _ = fs::remove_file(p);
                     Ok(Self::new(name, field, base_path))
                 }
@@ -144,7 +134,6 @@ impl BTreeIndex {
         let file = File::create(&path_tmp)?;
         let writer = BufWriter::new(file);
 
-        // Convert to DTO
         let dto = BTreeIndexFile {
             name: self.name.clone(),
             field: self.field.clone(),
@@ -158,23 +147,19 @@ impl BTreeIndex {
         Ok(())
     }
 
-    // Insert or Update
     pub fn insert(&mut self, key: &Value, doc_path: String) {
         let new_key = self.to_key(key);
         
-        // Check if doc exists and has different key
         if let Some(old_key) = self.reverse_map.get(&doc_path) {
             if *old_key == new_key {
-                return; // No change
+                return;
             }
-            // Remove from old key
             if let Some(list) = self.map.get_mut(old_key) {
                 list.remove(&doc_path);
             }
-            // Cleanup empty
             if let Some(list) = self.map.get(old_key) {
                 if list.is_empty() {
-                    let old_key_clone = old_key.clone(); // Split borrow
+                    let old_key_clone = old_key.clone();
                     self.map.remove(&old_key_clone);
                 }
             }
@@ -185,7 +170,6 @@ impl BTreeIndex {
         self.dirty = true;
     }
 
-    // Remove by path (key is optional/ignored, simpler API)
     pub fn remove(&mut self, _key: &Value, doc_path: &str) {
         if let Some(old_key) = self.reverse_map.remove(doc_path) {
             if let Some(list) = self.map.get_mut(&old_key) {
@@ -205,15 +189,11 @@ impl BTreeIndex {
         match key {
             Value::String(s) => IndexKey::String(s.clone()),
             Value::Number(n) => {
-                // Try to get f64, default to 0.0 or handle error?
-                // serde_json::Number always works for f64 unless it's null/bool which are separate
-                // But extremely large integers might lose precision.
-                // Given standard JS numbers are f64, this matches environment behavior.
                 IndexKey::Number(OrderedNumber(n.as_f64().unwrap_or(0.0)))
             },
             Value::Bool(b) => IndexKey::Bool(*b),
             Value::Null => IndexKey::Null,
-            _ => IndexKey::String(key.to_string()), // Fallback for Arrays/Objects
+            _ => IndexKey::String(key.to_string()),
         }
     }
 
