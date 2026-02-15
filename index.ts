@@ -4,6 +4,7 @@ import { copyFile } from 'fs/promises';
 import { EventEmitter } from 'events';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
 import { performance } from 'perf_hooks';
+import { isDeepStrictEqual } from 'util';
 
 // Load native binding
 // @ts-ignore
@@ -197,16 +198,7 @@ export interface Transaction {
  * Simple Deep Equal Implementation
  */
 function deepEqual(a: unknown, b: unknown): boolean {
-    if (a === b) return true;
-    if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false;
-    const aObj = a as Record<string, unknown>;
-    const bObj = b as Record<string, unknown>;
-    const keysA = Object.keys(aObj), keysB = Object.keys(bObj);
-    if (keysA.length !== keysB.length) return false;
-    for (const key of keysA) {
-        if (!keysB.includes(key) || !deepEqual(aObj[key], bObj[key])) return false;
-    }
-    return true;
+    return isDeepStrictEqual(a, b);
 }
 
 /**
