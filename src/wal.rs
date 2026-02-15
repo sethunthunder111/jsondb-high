@@ -346,21 +346,69 @@ fn set_value_at_path(root: &mut Value, path: &str, value: Value) {
     let mut current = root;
     
     for (i, part) in parts.iter().enumerate() {
-        if i == parts.len() - 1 {
+        let is_last = i == parts.len() - 1;
+
+        if is_last {
             // Last part - set value
-            if let Value::Object(map) = current {
-                map.insert(part.to_string(), value);
+            match current {
+                Value::Object(map) => {
+                    map.insert(part.to_string(), value);
+                }
+                Value::Array(arr) => {
+                    if let Ok(idx) = part.parse::<usize>() {
+                        while arr.len() <= idx {
+                            arr.push(Value::Null);
+                        }
+                        arr[idx] = value;
+                    }
+                }
+                _ => {
+                    if current.is_null() {
+                        if let Ok(idx) = part.parse::<usize>() {
+                            let mut arr = vec![Value::Null; idx + 1];
+                            arr[idx] = value;
+                            *current = Value::Array(arr);
+                        } else {
+                            let mut map = Map::new();
+                            map.insert(part.to_string(), value);
+                            *current = Value::Object(map);
+                        }
+                    }
+                }
             }
             return;
         }
         
         // Navigate/create path
+        if current.is_null() {
+            let is_array = part.parse::<usize>().is_ok();
+            *current = if is_array { Value::Array(Vec::new()) } else { Value::Object(Map::new()) };
+        }
+
+        let is_next_array = parts[i+1].parse::<usize>().is_ok();
+
         match current {
             Value::Object(map) => {
                 if !map.contains_key(*part) {
-                    map.insert(part.to_string(), Value::Object(Map::new()));
+                    map.insert(
+                        part.to_string(),
+                        if is_next_array { Value::Array(Vec::new()) } else { Value::Object(Map::new()) }
+                    );
                 }
                 current = map.get_mut(*part).unwrap();
+            }
+            Value::Array(arr) => {
+                if let Ok(idx) = part.parse::<usize>() {
+                    while arr.len() <= idx {
+                        arr.push(Value::Null);
+                    }
+                    if arr[idx].is_null() {
+                        arr[idx] = if is_next_array { Value::Array(Vec::new()) } else { Value::Object(Map::new()) };
+                    }
+                    current = &mut arr[idx];
+                } else {
+                    return;
+                }
             }
             _ => return,
         }
@@ -377,9 +425,21 @@ fn delete_value_at_path(root: &mut Value, path: &str) {
     let mut current = root;
     
     for (i, part) in parts.iter().enumerate() {
-        if i == parts.len() - 1 {
-            if let Value::Object(map) = current {
-                map.remove(*part);
+        let is_last = i == parts.len() - 1;
+
+        if is_last {
+            match current {
+                Value::Object(map) => {
+                    map.remove(*part);
+                }
+                Value::Array(arr) => {
+                    if let Ok(idx) = part.parse::<usize>() {
+                        if idx < arr.len() {
+                            arr.remove(idx);
+                        }
+                    }
+                }
+                _ => {}
             }
             return;
         }
@@ -388,6 +448,17 @@ fn delete_value_at_path(root: &mut Value, path: &str) {
             Value::Object(map) => {
                 if let Some(next) = map.get_mut(*part) {
                     current = next;
+                } else {
+                    return;
+                }
+            }
+            Value::Array(arr) => {
+                if let Ok(idx) = part.parse::<usize>() {
+                    if let Some(next) = arr.get_mut(idx) {
+                        current = next;
+                    } else {
+                        return;
+                    }
                 } else {
                     return;
                 }
