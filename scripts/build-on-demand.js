@@ -45,7 +45,32 @@ function buildOnDemand() {
     // Check for cargo
     execSync('cargo --version', { stdio: 'ignore' });
   } catch (e) {
-    throw new Error('Cargo not found. Please install Rust and Cargo to build the native module: https://rustup.rs/');
+    // If cargo is missing, try to automatically install rustup (non-Windows).
+    if (process.platform === 'win32') {
+      throw new Error('Cargo not found. Please install Rust and Cargo to build the native module on Windows: https://rustup.rs/');
+    }
+    console.log('Cargo not found. Attempting to install Rust toolchain via rustup (non-interactive)...');
+    try {
+      // Install rustup non-interactively
+      execSync('curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y', { stdio: 'inherit' });
+      // Source cargo env if present so the current process can find cargo
+      const cargoEnv = path.join(process.env.HOME || process.env.USERPROFILE || '', '.cargo', 'env');
+      if (fs.existsSync(cargoEnv)) {
+        try {
+          execSync(`. ${cargoEnv}`, { stdio: 'ignore', shell: '/bin/bash' });
+        } catch (e2) {
+          // ignore
+        }
+      }
+      // Verify cargo is now available
+      execSync('cargo --version', { stdio: 'ignore' });
+    } catch (installErr) {
+      console.error('Automatic rustup install failed:', installErr && installErr.message ? installErr.message : installErr);
+      if (process.env.npm_lifecycle_event === 'postinstall') {
+        return null;
+      }
+      throw new Error('Cargo not found after attempted install. Please install Rust and Cargo manually: https://rustup.rs/');
+    }
   }
 
   try {
