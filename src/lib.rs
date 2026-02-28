@@ -530,8 +530,6 @@ impl NativeDB {
         Ok(())
     }
 
-
-
     /// Zero-allocation path traversal
     #[allow(dead_code)]
     fn get_value_from_root<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {

@@ -304,10 +304,27 @@ switch (platform) {
 }
 
 if (!nativeBinding) {
-  if (loadError) {
-    throw loadError
+  // --- Graceful auto-build fallback ---
+  // Neither the local .node file nor the npm package was found.
+  // Attempt a build from source so the developer doesn't have to
+  // manually run `bun run build` (e.g. after `bun run clean`).
+  try {
+    const { buildOnDemand, getNativeName } = require('./scripts/build-on-demand.js')
+    const builtPath = buildOnDemand()
+    if (builtPath) {
+      nativeBinding = require(builtPath)
+    }
+  } catch (buildErr) {
+    // Surface the original load error, plus the build failure reason.
+    const reason = loadError ? loadError.message : 'no load error recorded'
+    throw new Error(
+      `Failed to load native binding (${reason}) and auto-build also failed: ${buildErr && buildErr.message ? buildErr.message : buildErr}`
+    )
   }
-  throw new Error(`Failed to load native binding`)
+
+  if (!nativeBinding) {
+    throw new Error(`Failed to load native binding and auto-build produced no output`)
+  }
 }
 
 const { NativeDb } = nativeBinding

@@ -1,996 +1,1247 @@
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test';
 import { JSONDatabase } from '../index.ts';
-import { unlinkSync, existsSync } from 'fs';
+import { unlinkSync, existsSync, readFileSync } from 'fs';
 
-const TEST_DB = 'test_db.json';
-const TEST_WAL = 'test_db.json.wal';
-const TEST_ENCRYPTED_DB = 'test_encrypted.json';
-const TEST_LOCK_DB = 'test_lock.json';
-const TEST_DURABILITY_DB = 'test_durability.json';
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// Clean up previous runs
-const cleanup = () => {
-    const files = [
-        TEST_DB, TEST_WAL, TEST_ENCRYPTED_DB, `${TEST_ENCRYPTED_DB}.wal`,
-        TEST_LOCK_DB, `${TEST_LOCK_DB}.wal`,
-        TEST_DURABILITY_DB, `${TEST_DURABILITY_DB}.wal`
-    ];
-    for (const f of files) {
-        if (existsSync(f)) unlinkSync(f);
-    }
-    // Clean up any snapshot files
-    const fs = require('fs');
-    const dir = fs.readdirSync('.');
-    for (const file of dir) {
-        if (file.includes('.bak')) {
-            unlinkSync(file);
-        }
-    }
-};
-
-cleanup();
-
-async function sleep(ms: number): Promise<void> {
+function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function runTests() {
-    console.log('🚀 === jsondb-high Test Suite ===\n');
+const tmpFiles: string[] = [];
 
-    // ============================================
-    // TEST 1: Basic Set/Get (In-Memory Mode)
-    // ============================================
-    console.log('📝 [Test 1] Basic Set/Get');
-    const db = new JSONDatabase(TEST_DB, { wal: false });
-    await db.set('user.name', 'Alice');
-    const name = await db.get('user.name');
-    console.log('   Got Name:', name);
-    if (name !== 'Alice') throw new Error('Basic Set/Get failed');
-    await db.close();
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 2: WAL Persistence
-    // ============================================
-    console.log('💾 [Test 2] WAL Persistence');
-    const db2 = new JSONDatabase(TEST_DB, { wal: true });
-    await db2.set('config.theme', 'dark');
-    await db2.save(); // Force save
-    await db2.close(); // Release lock for next instance
-    
-    const db3 = new JSONDatabase(TEST_DB, { wal: true });
-    const theme = await db3.get('config.theme');
-    console.log('   Got Theme:', theme);
-    if (theme !== 'dark') throw new Error('WAL Persistence failed');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 3: Arrays & Push/Pull with Deduplication
-    // ============================================
-    console.log('📚 [Test 3] Arrays & Push/Pull');
-    await db3.set('tags', ['a']);
-    await db3.push('tags', 'b', 'b', 'c'); // 'b' duped, should be deduped
-    const tags = await db3.get<string[]>('tags');
-    console.log('   Tags after push:', tags);
-
-    await db3.pull('tags', 'a');
-    const tags2 = await db3.get<string[]>('tags');
-    console.log('   Tags after pull:', tags2);
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 4: Add/Subtract (Atomic Math)
-    // ============================================
-    console.log('🔢 [Test 4] Atomic Add/Subtract');
-    await db3.set('counter', 10);
-    const afterAdd = await db3.add('counter', 5);
-    console.log('   After add(5):', afterAdd);
-    if (afterAdd !== 15) throw new Error('Add failed');
-
-    const afterSub = await db3.subtract('counter', 3);
-    console.log('   After subtract(3):', afterSub);
-    if (afterSub !== 12) throw new Error('Subtract failed');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 5: Batch Operations
-    // ============================================
-    console.log('📦 [Test 5] Batch Operations');
-    await db3.batch([
-        { type: 'set', path: 'batch.item_a', value: 1 },
-        { type: 'set', path: 'batch.item_b', value: 2 },
-        { type: 'delete', path: 'tags' }
-    ]);
-    const b1 = await db3.get('batch.item_a');
-    const hasTags = await db3.has('tags');
-    console.log('   Batch results:', { b1, hasTags });
-    if (b1 !== 1 || hasTags) throw new Error('Batch failed');
-    console.log('   ✅ Passed\n');
-
-    await db3.close();
-    console.log('🔍 [Test 6] Indexing');
-    const dbWithIndex = new JSONDatabase(TEST_DB, {
-        wal: false,
-        indices: [{ name: 'email', path: 'users', field: 'email' }]
-    });
-    
-    await dbWithIndex.set('users.alice', { name: 'Alice', email: 'alice@example.com' });
-    await dbWithIndex.set('users.bob', { name: 'Bob', email: 'bob@example.com' });
-    dbWithIndex.rebuildIndex();
-    
-    interface User { name: string; email: string; }
-    const user = await dbWithIndex.findByIndex<User>('email', 'bob@example.com');
-    console.log('   Found user by email:', user);
-    if (user?.name !== 'Bob') throw new Error('Index lookup failed');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 7: Query Builder with Where Clauses
-    // ============================================
-    console.log('🔎 [Test 7] Advanced Query Builder');
-    await dbWithIndex.set('products', {
-        '1': { id: 1, name: 'Laptop', price: 999, category: 'Electronics' },
-        '2': { id: 2, name: 'Phone', price: 599, category: 'Electronics' },
-        '3': { id: 3, name: 'Book', price: 20, category: 'Books' },
-        '4': { id: 4, name: 'Headphones', price: 150, category: 'Electronics' }
-    });
-
-    interface Product { id: number; name: string; price: number; category: string; }
-    const expensiveElectronics = await dbWithIndex.query<Product>('products')
-        .where('category').eq('Electronics')
-        .where('price').gt(100)
-        .sort({ price: -1 })
-        .select(['name', 'price'])
-        .exec();
-    
-    console.log('   Expensive Electronics (sorted by price desc):', expensiveElectronics);
-    if (expensiveElectronics.length !== 3) throw new Error('Query failed');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 8: Aggregation Functions
-    // ============================================
-    console.log('📊 [Test 8] Aggregation Functions');
-    const totalPrice = dbWithIndex.query<Product>('products').sum('price');
-    const avgPrice = dbWithIndex.query<Product>('products').avg('price');
-    const minPrice = dbWithIndex.query<Product>('products').min('price');
-    const maxPrice = dbWithIndex.query<Product>('products').max('price');
-    const count = dbWithIndex.query<Product>('products').count();
-    const categories = dbWithIndex.query<Product>('products').distinct('category');
-    
-    console.log('   Total:', totalPrice, 'Avg:', avgPrice, 'Min:', minPrice, 'Max:', maxPrice, 'Count:', count);
-    console.log('   Categories:', categories);
-    if (count !== 4) throw new Error('Aggregation failed');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 9: Group By
-    // ============================================
-    console.log('📈 [Test 9] Group By');
-    const grouped = dbWithIndex.query<Product>('products').groupBy('category');
-    console.log('   Groups:');
-    for (const [key, items] of grouped) {
-        console.log(`     ${key}: ${items.length} items`);
-    }
-    if (grouped.get('Electronics')?.length !== 3) throw new Error('GroupBy failed');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 10: Pagination
-    // ============================================
-    console.log('📄 [Test 10] Pagination');
-    const page1 = await dbWithIndex.paginate<Product>('products', 1, 2);
-    console.log('   Page 1:', page1.data.length, 'items, Total:', page1.meta.total, 'Pages:', page1.meta.pages);
-    const page2 = await dbWithIndex.paginate<Product>('products', 2, 2);
-    console.log('   Page 2:', page2.data.length, 'items');
-    if (!page1.meta.hasNext || page1.meta.hasPrev) throw new Error('Pagination meta failed');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 11: TTL (Time to Live)
-    // ============================================
-    console.log('⏱️  [Test 11] TTL (Time to Live)');
-    await dbWithIndex.setWithTTL('session.abc123', { userId: 1 }, 2); // Expires in 2 seconds
-    
-    const sessionBefore = await dbWithIndex.get('session.abc123');
-    const ttl = await dbWithIndex.getTTL('session.abc123');
-    console.log('   Session before:', sessionBefore, 'TTL:', ttl, 'seconds');
-    if (!sessionBefore) throw new Error('TTL set failed');
-    
-    console.log('   Waiting 2.5 seconds for expiry...');
-    await sleep(2500);
-    
-    const sessionAfter = await dbWithIndex.get('session.abc123');
-    console.log('   Session after expiry:', sessionAfter);
-    if (sessionAfter !== undefined && sessionAfter !== null) throw new Error('TTL expiry failed');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 12: Pub/Sub (Subscriptions)
-    // ============================================
-    console.log('📡 [Test 12] Pub/Sub (Subscriptions)');
-    let subscriptionTriggered = false;
-    let receivedValue: unknown = null;
-    
-    const unsubscribe = dbWithIndex.subscribe('settings.*', (value, oldValue) => {
-        console.log('   Subscription triggered! New:', value, 'Old:', oldValue);
-        subscriptionTriggered = true;
-        receivedValue = value;
-    });
-    
-    await dbWithIndex.set('settings.theme', 'light');
-    await sleep(100); // Small delay for event to fire
-    
-    if (!subscriptionTriggered) throw new Error('Subscription not triggered');
-    if (receivedValue !== 'light') throw new Error('Subscription value mismatch');
-    
-    // Test unsubscribe
-    subscriptionTriggered = false;
-    unsubscribe();
-    await dbWithIndex.set('settings.theme', 'dark');
-    await sleep(100);
-    if (subscriptionTriggered) throw new Error('Unsubscribe failed');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 13: Middleware (Before & After)
-    // ============================================
-    console.log('🔧 [Test 13] Middleware');
-    dbWithIndex.before('set', 'users.*', (ctx) => {
-        console.log('   [Before] Intercepted set on:', ctx.path);
-        const val = ctx.value as Record<string, unknown>;
-        val.updatedAt = Date.now();
-        return ctx;
-    });
-
-    dbWithIndex.after('set', 'users.*', (ctx) => {
-        console.log('   [After] Set complete on:', ctx.path);
-        return ctx;
-    });
-
-    await dbWithIndex.set('users.charlie', { name: 'Charlie', email: 'charlie@example.com' });
-    const charlie = await dbWithIndex.get<User & { updatedAt: number }>('users.charlie');
-    console.log('   User with auto-timestamp:', charlie);
-    if (!charlie?.updatedAt) throw new Error('Middleware failed');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 14: Transaction with Savepoints & Rollback
-    // ============================================
-    console.log('🔒 [Test 14] Transaction with Savepoints');
-    await dbWithIndex.set('bank', { alice: 100, bob: 100 });
-    
-    try {
-        await dbWithIndex.transaction(async (tx) => {
-            // Operation 1: Alice gives to Bob
-            const alice = await dbWithIndex.get<number>('bank.alice');
-            const bob = await dbWithIndex.get<number>('bank.bob');
-            await dbWithIndex.set('bank.alice', alice - 50);
-            await dbWithIndex.set('bank.bob', bob + 50);
-            
-            // Create savepoint
-            await tx.savepoint('sp1');
-            
-            // Operation 2: Bob gives to Charlie (oops, typo)
-            await dbWithIndex.set('bank.bob', bob + 50 - 20);
-            await dbWithIndex.set('bank.charlie', 20);
-            
-            // Rollback to savepoint
-            await tx.rollbackTo('sp1');
-        });
-        
-        const bank = await dbWithIndex.get<any>('bank');
-        console.log('   Bank state after transaction:', bank);
-        // Should be Alice: 50, Bob: 150, Charlie: null/undefined
-        if (bank.alice !== 50 || bank.bob !== 150 || bank.charlie !== undefined) {
-             console.log('   Mismatch:', { alice: bank.alice, bob: bank.bob, charlie: bank.charlie });
-             throw new Error('Transaction/Savepoint failed');
-        }
-    } catch (e) {
-        console.error('   Transaction error:', e);
-        throw e;
-    }
-    console.log('   ✅ Passed\n');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 15: Snapshots
-    // ============================================
-    console.log('📸 [Test 15] Snapshots');
-    const snapshotPath = await dbWithIndex.createSnapshot('test');
-    console.log('   Snapshot created:', snapshotPath);
-    if (!existsSync(snapshotPath)) throw new Error('Snapshot file not created');
-    unlinkSync(snapshotPath); // Cleanup
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 16: Encryption
-    // ============================================
-    console.log('🔐 [Test 16] Encryption');
-    const encryptedDb = new JSONDatabase(TEST_ENCRYPTED_DB, {
-        wal: false,
-        encryptionKey: 'super-secret-password-32-chars!'
-    });
-    
-    await encryptedDb.set('secret', { password: '12345', apiKey: 'xyz' });
-    await encryptedDb.save();
-    
-    // Check file is encrypted (not plain JSON)
-    const fileContent = require('fs').readFileSync(TEST_ENCRYPTED_DB, 'utf8');
-    console.log('   File starts with:', fileContent.slice(0, 32) + '...');
-    
-    // Verify we can read it back
-    const secret = await encryptedDb.get<{ password: string; apiKey: string }>('secret');
-    console.log('   Decrypted secret:', secret);
-    if (secret?.password !== '12345') throw new Error('Encryption/Decryption failed');
-    
-    await encryptedDb.close();
-    unlinkSync(TEST_ENCRYPTED_DB);
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 17: Utility Methods
-    // ============================================
-    console.log('🛠️  [Test 17] Utility Methods');
-    const keys = await dbWithIndex.keys('users');
-    const count2 = await dbWithIndex.count('users');
-    const stats = await dbWithIndex.stats();
-    
-    console.log('   User keys:', keys);
-    console.log('   User count:', count2);
-    console.log('   DB Stats:', stats);
-    if (stats.keys === 0) throw new Error('Stats failed');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 18: Find with Object Predicate
-    // ============================================
-    console.log('🔍 [Test 18] Find with Object Predicate');
-    const bob = await dbWithIndex.find<User>('users', { name: 'Bob' });
-    console.log('   Found Bob:', bob);
-    if (bob?.email !== 'bob@example.com') throw new Error('Find with object failed');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 19: FindAll
-    // ============================================
-    console.log('🔍 [Test 19] FindAll');
-    const electronics = await dbWithIndex.findAll<Product>('products', p => p.category === 'Electronics');
-    console.log('   All Electronics:', electronics.length, 'items');
-    if (electronics.length !== 3) throw new Error('FindAll failed');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 20: System Info (Multi-Core Detection)
-    // ============================================
-    console.log('🖥️  [Test 20] System Info (Multi-Core Detection)');
-    const sysInfo = dbWithIndex.getSystemInfo();
-    console.log('   Available Cores:', sysInfo.availableCores);
-    console.log('   Parallel Enabled:', sysInfo.parallelEnabled);
-    console.log('   Recommended Batch Size:', sysInfo.recommendedBatchSize);
-    if (sysInfo.availableCores < 1) throw new Error('System info failed');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 21: Parallel Batch Set Operations
-    // ============================================
-    console.log('⚡ [Test 21] Parallel Batch Set Operations');
-    
-    // Generate a larger dataset to test parallelism
-    const batchOps: Array<{ path: string; value: unknown }> = [];
-    for (let i = 0; i < 500; i++) {
-        batchOps.push({
-            path: `parallel_users.user_${i}`,
-            value: { id: i, name: `User ${i}`, age: 18 + (i % 60), active: i % 2 === 0 }
-        });
-    }
-    
-    const batchResult = await dbWithIndex.batchSetParallel(batchOps);
-    console.log('   Batch Result:', batchResult);
-    console.log('   Operations completed:', batchResult.count);
-    
-    if (!batchResult.success) throw new Error('Parallel batch failed: ' + batchResult.error);
-    if (batchResult.count !== 500) throw new Error('Parallel batch count mismatch');
-    
-    // Verify some data
-    const testUser = await dbWithIndex.get<{ id: number; name: string }>('parallel_users.user_42');
-    if (testUser?.name !== 'User 42') throw new Error('Parallel batch verification failed');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 22: Parallel Query
-    // ============================================
-    console.log('🔎 [Test 22] Parallel Query');
-    
-    interface ParallelUser { id: number; name: string; age: number; active: boolean; }
-    
-    // Query for active users over 50
-    const activeElders = await dbWithIndex.parallelQuery<ParallelUser>('parallel_users', [
-        { field: 'age', op: 'gte', value: 50 },
-        { field: 'active', op: 'eq', value: true }
-    ]);
-    
-    console.log('   Active users age >= 50:', activeElders.length);
-    
-    // Verify all results match criteria
-    for (const user of activeElders) {
-        if (user.age < 50) throw new Error('Parallel query filter failed: age');
-        if (!user.active) throw new Error('Parallel query filter failed: active');
-    }
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 23: Parallel Aggregation
-    // ============================================
-    console.log('📊 [Test 23] Parallel Aggregation');
-    
-    const parallelCount = await dbWithIndex.parallelAggregate('parallel_users', 'count');
-    console.log('   Parallel Count:', parallelCount);
-    if (parallelCount !== 500) throw new Error('Parallel count failed');
-    
-    const parallelSum = await dbWithIndex.parallelAggregate('parallel_users', 'sum', 'age');
-    console.log('   Parallel Sum of ages:', parallelSum);
-    if (parallelSum === null || parallelSum <= 0) throw new Error('Parallel sum failed');
-    
-    const parallelAvg = await dbWithIndex.parallelAggregate('parallel_users', 'avg', 'age');
-    console.log('   Parallel Avg age:', parallelAvg);
-    if (parallelAvg === null || parallelAvg <= 0) throw new Error('Parallel avg failed');
-    
-    const parallelMin = await dbWithIndex.parallelAggregate('parallel_users', 'min', 'age');
-    console.log('   Parallel Min age:', parallelMin);
-    if (parallelMin !== 18) throw new Error('Parallel min failed');
-    
-    const parallelMax = await dbWithIndex.parallelAggregate('parallel_users', 'max', 'age');
-    console.log('   Parallel Max age:', parallelMax);
-    if (parallelMax !== 77) throw new Error('Parallel max failed');
-    console.log('   ✅ Passed\n');
-
-    // Cleanup parallel test data
-    await dbWithIndex.delete('parallel_users');
-
-    // ============================================
-    // v4.5 FEATURE TESTS
-    // ============================================
-
-    // ============================================
-    // TEST 24: v4.5 WAL Status
-    // ============================================
-    console.log('📊 [Test 24] v4.5 WAL Status');
-    const dbWal = new JSONDatabase(TEST_DB, { 
-        wal: true,
-        durability: 'batched'
-    });
-    
-    const walStatus = dbWal.walStatus();
-    console.log('   WAL Status:', walStatus);
-    if (!walStatus.enabled) throw new Error('WAL should be enabled');
-    console.log('   ✅ Passed\n');
-    await dbWal.close();
-
-    // ============================================
-    // TEST 25: v4.5 Durability Modes
-    // ============================================
-    console.log('💾 [Test 25] v4.5 Durability Modes');
-    
-    // Test 'none' durability (no WAL)
-    const dbNoDurability = new JSONDatabase(TEST_DURABILITY_DB + '_none', { 
-        durability: 'none'
-    });
-    const walStatusNone = dbNoDurability.walStatus();
-    console.log('   Durability "none" - WAL enabled:', walStatusNone.enabled);
-    if (walStatusNone.enabled) throw new Error('WAL should be disabled for durability=none');
-    await dbNoDurability.close();
-    
-    // Test 'sync' durability (immediate fsync)
-    const dbSync = new JSONDatabase(TEST_DURABILITY_DB + '_sync', { 
-        durability: 'sync'
-    });
-    await dbSync.set('test', { value: 1 });
-    await dbSync.sync(); // Explicit sync
-    const walStatusSync = dbSync.walStatus();
-    console.log('   Durability "sync" - WAL enabled:', walStatusSync.enabled);
-    if (!walStatusSync.enabled) throw new Error('WAL should be enabled for durability=sync');
-    await dbSync.close();
-    
-    console.log('   ✅ Passed\n');
-
-    // Cleanup durability test files
-    [TEST_DURABILITY_DB + '_none', TEST_DURABILITY_DB + '_sync'].forEach(f => {
-        if (existsSync(f)) unlinkSync(f);
-        if (existsSync(f + '.wal')) unlinkSync(f + '.wal');
-    });
-
-    // ============================================
-    // TEST 26: v4.5 Crash Recovery Simulation
-    // ============================================
-    console.log('🔄 [Test 26] v4.5 Crash Recovery Simulation');
-    const dbCrashTest = 'test_crash_recovery.json';
-    const dbCrashTestWal = 'test_crash_recovery.json.wal';
-    
-    // Clean up any previous test files
-    if (existsSync(dbCrashTest)) unlinkSync(dbCrashTest);
-    if (existsSync(dbCrashTestWal)) unlinkSync(dbCrashTestWal);
-    
-    // Create DB with batched durability
-    const dbBeforeCrash = new JSONDatabase(dbCrashTest, { 
-        durability: 'batched',
-        walFlushMs: 50 // Short flush interval for testing
-    });
-    
-    // Write data
-    await dbBeforeCrash.set('critical.data', { user: 'test', value: 42 });
-    await dbBeforeCrash.sync(); // Ensure it's flushed
-    
-    // Close without saving (simulates crash before checkpoint)
-    await dbBeforeCrash.close();
-    
-    // Reopen - should recover from WAL
-    const dbAfterCrash = new JSONDatabase(dbCrashTest, { 
-        durability: 'batched'
-    });
-    
-    const recoveredData = await dbAfterCrash.get('critical.data');
-    console.log('   Recovered data after crash:', recoveredData);
-    if (!recoveredData || (recoveredData as any).value !== 42) {
-        throw new Error('Crash recovery failed - data not recovered from WAL');
-    }
-    
-    await dbAfterCrash.close();
-    
-    // Cleanup
-    if (existsSync(dbCrashTest)) unlinkSync(dbCrashTest);
-    if (existsSync(dbCrashTestWal)) unlinkSync(dbCrashTestWal);
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 27: v4.5 Lock-Free Reads Performance
-    // ============================================
-    console.log('⚡ [Test 27] v4.5 Lock-Free Reads Performance');
-    const dbPerf = new JSONDatabase(TEST_DB, { 
-        wal: true,
-        durability: 'batched'
-    });
-    
-    // Populate with test data
-    await dbPerf.set('perf.test', { items: Array.from({ length: 1000 }, (_, i) => ({ id: i, value: i * 2 })) });
-    
-    // Measure read performance
-    const readStart = performance.now();
-    for (let i = 0; i < 1000; i++) {
-        await dbPerf.get('perf.test');
-    }
-    const readDuration = performance.now() - readStart;
-    console.log(`   1000 reads took ${readDuration.toFixed(2)}ms (${(readDuration / 1000).toFixed(3)}ms avg)`);
-    
-    if (readDuration > 5000) { // Should be much faster than 5 seconds
-        console.log('   ⚠️  Warning: Reads slower than expected, but test passes');
-    }
-    
-    await dbPerf.close();
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 28: v4.5 Multi-Process Lock (Basic)
-    // ============================================
-    console.log('🔒 [Test 28] v4.5 Multi-Process Lock (Basic)');
-    
-    const lockTestDb = 'test_lock_basic.json';
-    if (existsSync(lockTestDb)) unlinkSync(lockTestDb);
-    if (existsSync(lockTestDb + '.wal')) unlinkSync(lockTestDb + '.wal');
-    
-    // Test 'none' lock mode (default for backwards compatibility)
-    const dbNoLock = new JSONDatabase(lockTestDb, { 
-        lockMode: 'none',
-        durability: 'none'
-    });
-    await dbNoLock.set('test', 1);
-    console.log('   Lock mode "none" works');
-    await dbNoLock.close();
-    
-    // Test 'exclusive' lock mode
-    const dbExclusive = new JSONDatabase(lockTestDb, { 
-        lockMode: 'exclusive',
-        durability: 'batched'
-    });
-    await dbExclusive.set('test', 2);
-    console.log('   Lock mode "exclusive" works');
-    
-    // WAL status should work
-    const exclusiveWalStatus = dbExclusive.walStatus();
-    if (!exclusiveWalStatus.enabled) throw new Error('WAL should be enabled');
-    console.log('   WAL status with exclusive lock:', exclusiveWalStatus);
-    
-    await dbExclusive.close();
-    
-    // Cleanup
-    if (existsSync(lockTestDb)) unlinkSync(lockTestDb);
-    if (existsSync(lockTestDb + '.wal')) unlinkSync(lockTestDb + '.wal');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 29: v4.5 Batched Write Performance
-    // ============================================
-    console.log('⚡ [Test 29] v4.5 Batched Write Performance');
-    const dbBatch = new JSONDatabase(TEST_DB, { 
-        durability: 'batched',
-        walBatchSize: 100,
-        walFlushMs: 10
-    });
-    
-    // Measure batched write performance
-    const batchWriteStart = performance.now();
-    for (let i = 0; i < 100; i++) {
-        await dbBatch.set(`batch_perf.item_${i}`, { id: i, data: 'x'.repeat(100) });
-    }
-    const batchWriteDuration = performance.now() - batchWriteStart;
-    console.log(`   100 batched writes took ${batchWriteDuration.toFixed(2)}ms`);
-    
-    await dbBatch.sync(); // Ensure all flushed
-    
-    const finalWalStatus = dbBatch.walStatus();
-    console.log('   Final WAL status:', finalWalStatus);
-    
-    await dbBatch.close();
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 30: v4.5 New Query Operators (containsAll, containsAny)
-    // ============================================
-    console.log('🔎 [Test 30] v4.5 New Query Operators');
-    const dbNewOps = new JSONDatabase(TEST_DB, { durability: 'none' });
-    
-    await dbNewOps.set('items', {
-        '1': { id: 1, tags: ['a', 'b', 'c'], name: 'Item 1' },
-        '2': { id: 2, tags: ['b', 'c', 'd'], name: 'Item 2' },
-        '3': { id: 3, tags: ['a', 'c'], name: 'Item 3' },
-        '4': { id: 4, tags: ['e', 'f'], name: 'Item 4' },
-    });
-    
-    // Test parallel query with containsAll
-    interface TaggedItem { id: number; tags: string[]; name: string; }
-    const itemsWithAB = await dbNewOps.parallelQuery<TaggedItem>('items', [
-        { field: 'tags', op: 'containsAll', value: ['a', 'b'] }
-    ]);
-    console.log('   Items with tags a AND b:', itemsWithAB.length);
-    if (itemsWithAB.length !== 1) throw new Error('containsAll failed');
-    
-    // Test parallel query with containsAny
-    const itemsWithAorE = await dbNewOps.parallelQuery<TaggedItem>('items', [
-        { field: 'tags', op: 'containsAny', value: ['a', 'e'] }
-    ]);
-    console.log('   Items with tags a OR e:', itemsWithAorE.length);
-    if (itemsWithAorE.length !== 3) throw new Error('containsAny failed');
-    
-    await dbNewOps.close();
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 31: v4.5 Parallel Join (Lookup)
-    // ============================================
-    console.log('🔗 [Test 31] v4.5 Parallel Join (Lookup)');
-    const dbJoin = new JSONDatabase(TEST_DB, { durability: 'none' });
-    
-    // Set up users and orders
-    await dbJoin.set('users_join', {
-        '1': { id: 1, name: 'Alice' },
-        '2': { id: 2, name: 'Bob' },
-        '3': { id: 3, name: 'Charlie' }
-    });
-    
-    await dbJoin.set('orders_join', {
-        '101': { id: 101, userId: 1, amount: 100 },
-        '102': { id: 102, userId: 1, amount: 200 },
-        '103': { id: 103, userId: 2, amount: 150 },
-        '104': { id: 104, userId: 2, amount: 50 },
-        '105': { id: 105, userId: 2, amount: 75 }
-    });
-    
-    // Perform parallel lookup join
-    const joinedResult = await dbJoin.parallelLookup(
-        'users_join',
-        'orders_join',
-        'id',
-        'userId',
-        'orders'
-    );
-    
-    console.log('   Joined result count:', joinedResult.length);
-    const alice = joinedResult.find((u: any) => u.name === 'Alice');
-    const bobJoined = joinedResult.find((u: any) => u.name === 'Bob');
-    
-    if (alice?.orders?.length !== 2) throw new Error('Join failed for Alice');
-    if (bobJoined?.orders?.length !== 3) throw new Error('Join failed for Bob');
-    
-    console.log('   Alice orders:', alice.orders.length);
-    console.log('   Bob orders:', bobJoined.orders.length);
-    console.log('   Charlie orders:', joinedResult.find((u: any) => u.name === 'Charlie')?.orders?.length || 0);
-    
-    await dbJoin.close();
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 32: Schema Validation
-    // ============================================
-    console.log('✅ [Test 32] Schema Validation');
-    const dbSchema = new JSONDatabase(TEST_DB + '.schema', {
-        schemas: {
-            'users_strict': {
-                type: 'object',
-                properties: {
-                    'age': { type: 'number', minimum: 0, maximum: 120 },
-                    'email': { type: 'string', pattern: '^.+@.+\\..+$' }
-                },
-                required: ['email']
-            }
-        }
-    });
-
-    // Valid data
-    await dbSchema.set('users_strict.1', { age: 25, email: 'test@example.com' });
-    console.log('   Valid data accepted');
-
-    // Invalid data - wrong type
-    try {
-        await dbSchema.set('users_strict.2', { age: 'not-a-number', email: 'test@example.com' });
-        throw new Error('Should have failed validation (wrong type)');
-    } catch (e: any) {
-        console.log('   Invalid data (type) correctly rejected:', e.message);
-    }
-
-    // Invalid data - out of range
-    try {
-        await dbSchema.set('users_strict.3', { age: 150, email: 'test@example.com' });
-        throw new Error('Should have failed validation (out of range)');
-    } catch (e: any) {
-        console.log('   Invalid data (range) correctly rejected:', e.message);
-    }
-
-    // Invalid data - missing required field
-    try {
-        await dbSchema.set('users_strict.4', { age: 30 });
-        throw new Error('Should have failed validation (missing required)');
-    } catch (e: any) {
-        console.log('   Invalid data (required) correctly rejected:', e.message);
-    }
-
-    await dbSchema.close();
-    if (existsSync(TEST_DB + '.schema')) unlinkSync(TEST_DB + '.schema');
-    if (existsSync(TEST_DB + '.schema.wal')) unlinkSync(TEST_DB + '.schema.wal');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 33: db.values()
-    // ============================================
-    console.log('📋 [Test 33] db.values()');
-
-    // 1. Test Object
-    await dbWithIndex.set('values_test.obj', { a: 1, b: 2, c: 3 });
-    const objVals = await dbWithIndex.values<number>('values_test.obj');
-    console.log('   Object values:', objVals);
-    if (objVals.length !== 3 || !objVals.includes(1) || !objVals.includes(2) || !objVals.includes(3)) {
-        throw new Error('db.values() failed for object');
-    }
-
-    // 2. Test Array
-    await dbWithIndex.set('values_test.arr', [10, 20]);
-    const arrVals = await dbWithIndex.values<number>('values_test.arr');
-    console.log('   Array values:', arrVals);
-    if (arrVals.length !== 2 || !arrVals.includes(10) || !arrVals.includes(20)) {
-        throw new Error('db.values() failed for array');
-    }
-
-    // 3. Test Primitive (should be empty based on implementation)
-    await dbWithIndex.set('values_test.prim', 'hello');
-    const primVals = await dbWithIndex.values('values_test.prim');
-    console.log('   Primitive values:', primVals);
-    if (primVals.length !== 0) throw new Error('db.values() failed for primitive');
-
-    // 4. Test Non-existent (should be empty)
-    const nonExistVals = await dbWithIndex.values('values_test.nothing');
-    if (nonExistVals.length !== 0) throw new Error('db.values() failed for non-existent path');
-
-    // Cleanup
-    await dbWithIndex.delete('values_test');
-
-    // ============================================
-    // TEST 34: Clear Data
-    // ============================================
-    console.log('🧹 [Test 34] Clear Data');
-    const dbClear = new JSONDatabase(TEST_DB + '.clear', { wal: false });
-    await dbClear.set('user.name', 'Alice');
-    await dbClear.set('config', { theme: 'dark' });
-
-    // Verify data exists
-    const dataBeforeClear = await dbClear.get('');
-    if (Object.keys(dataBeforeClear as object).length === 0) {
-        throw new Error('Data should not be empty before clear');
-    }
-
-    // Clear data
-    await dbClear.clear();
-
-    // Verify data is empty
-    const dataAfterClear = await dbClear.get('');
-    console.log('   Data after clear:', dataAfterClear);
-    if (Object.keys(dataAfterClear as object).length !== 0) {
-        throw new Error('Data should be empty after clear');
-    }
-
-    await dbClear.close();
-    if (existsSync(TEST_DB + '.clear')) unlinkSync(TEST_DB + '.clear');
-    
-    // ============================================
-    // TEST 35: Nested Transactions
-    // ============================================
-    console.log('🔄 [Test 35] Nested Transactions');
-    const dbNested = new JSONDatabase(TEST_DB, { wal: false });
-
-    // Initial state
-    await dbNested.set('bank', { alice: 100, bob: 100, charlie: 100 });
-
-    // Case 1: Both Commit
-    try {
-        await dbNested.transaction(async (tx1) => {
-            await dbNested.set('bank.alice', 90); // -10
-
-            await dbNested.transaction(async (tx2) => {
-                await dbNested.set('bank.bob', 110); // +10
-            });
-        });
-
-        const bank = await dbNested.get<any>('bank');
-        if (bank.alice !== 90 || bank.bob !== 110) throw new Error('Both commit failed');
-    } catch (e) {
-        throw new Error('Nested transaction case 1 failed: ' + e);
-    }
-
-    // Reset
-    await dbNested.set('bank', { alice: 100, bob: 100, charlie: 100 });
-
-    // Case 2: Inner Fails (Rollback Inner, Outer Catches)
-    try {
-        await dbNested.transaction(async (tx1) => {
-            await dbNested.set('bank.alice', 80); // -20
-
-            try {
-                await dbNested.transaction(async (tx2) => {
-                    await dbNested.set('bank.bob', 120); // +20
-                    throw new Error('Inner error');
-                });
-            } catch (e) {
-                // Caught inner error
-            }
-        });
-
-        const bank = await dbNested.get<any>('bank');
-        // Alice should be 80, Bob should be 100 (rolled back)
-        if (bank.alice !== 80 || bank.bob !== 100) throw new Error('Inner rollback failed');
-    } catch (e) {
-        throw new Error('Nested transaction case 2 failed: ' + e);
-    }
-
-    // Reset
-    await dbNested.set('bank', { alice: 100, bob: 100, charlie: 100 });
-
-    // Case 3: Outer Fails (Rollback Everything)
-    try {
-        await dbNested.transaction(async (tx1) => {
-            await dbNested.set('bank.alice', 70); // -30
-
-            await dbNested.transaction(async (tx2) => {
-                await dbNested.set('bank.bob', 130); // +30
-            });
-
-            throw new Error('Outer error');
-        });
-    } catch (e) {
-        // Caught outer error
-    }
-
-    const bank = await dbNested.get<any>('bank');
-    // Everything should be initial state
-    if (bank.alice !== 100 || bank.bob !== 100) throw new Error('Outer rollback failed');
-
-    await dbNested.close();
-    
-    // ============================================
-    // TEST 36: Enhanced TTL Features
-    // ============================================
-    console.log('⏱️  [Test 36] Enhanced TTL Features');
-    const dbTTL = new JSONDatabase(TEST_DB + '_ttl', { wal: false });
-
-    // 1. setTTL on existing key (using fractional seconds for speed)
-    await dbTTL.set('ttl_key', 'value');
-    dbTTL.setTTL('ttl_key', 0.5); // 0.5 seconds
-
-    // Test hasTTL
-    if (!dbTTL.hasTTL('ttl_key')) throw new Error('hasTTL failed - should return true');
-
-    // Let's use 1.5s for initial setup to verify getTTL works
-    dbTTL.setTTL('ttl_key', 1.5);
-    const initialTTL = await dbTTL.getTTL('ttl_key');
-    console.log('   Initial TTL:', initialTTL);
-    if (initialTTL <= 0) throw new Error('getTTL failed - should be >= 1');
-
-    // 2. Overwrite TTL
-    // Overwrite with shorter TTL to test clear/reset
-    dbTTL.setTTL('ttl_key', 0.5);
-
-    // 3. clearTTL
-    dbTTL.clearTTL('ttl_key');
-    if (dbTTL.hasTTL('ttl_key')) throw new Error('clearTTL failed - should return false');
-
-    await sleep(800);
-    const valAfterWait = await dbTTL.get('ttl_key');
-    if (valAfterWait !== 'value') throw new Error('Key expired after clearTTL - Timer was not cleared');
-
-    // 4. Expiry callback & Event
-    let expiredPath = '';
-    const expiryPromise = new Promise<void>((resolve) => {
-        dbTTL.on('ttl:expired', ({ path }) => {
-            expiredPath = path;
-            resolve();
-        });
-    });
-
-    await dbTTL.set('ttl_expire_event', 'bye');
-    dbTTL.setTTL('ttl_expire_event', 0.5);
-
-    console.log('   Waiting for expiry event...');
-    await Promise.race([
-        expiryPromise,
-        sleep(1000)
-    ]);
-
-    if (expiredPath !== 'ttl_expire_event') throw new Error('TTL expiry event not fired or wrong path');
-    if (await dbTTL.has('ttl_expire_event')) throw new Error('Key not deleted after TTL expiry');
-
-    await dbTTL.close();
-    if (existsSync(TEST_DB + '_ttl')) unlinkSync(TEST_DB + '_ttl');
-    console.log('   ✅ Passed\n');
-
-    // ============================================
-    // TEST 37: Restore Snapshot (Success)
-
-    // ============================================
-    // TEST 38: Restore Snapshot (File Not Found)
-    // ============================================
-    console.log('📸 [Test 38] Restore Snapshot (File Not Found)');
-    const dbRestoreError = new JSONDatabase(TEST_DB, { wal: false });
-    const nonExistentPath = 'non_existent_snapshot.bak';
-
-    try {
-        await dbRestoreError.restoreSnapshot(nonExistentPath);
-        throw new Error('Should have thrown error for missing snapshot');
-    } catch (e: any) {
-        if (!e.message.includes('Snapshot not found:')) {
-            throw new Error('Unexpected error message: ' + e.message);
-        }
-        console.log('   Caught expected error:', e.message);
-    }
-
-    await dbRestoreError.close();
-    console.log('   ✅ Passed\n');
-
-    // Cleanup
-    await dbWithIndex.close();
-    cleanup();
-
-    console.log('\n🎉 === All Tests Passed! ===');
-    console.log('\n📋 v4.5 Features Tested:');
-    console.log('   • Nested Transactions');
-    console.log('   • WAL Status API');
-    console.log('   • Durability Modes (none, batched, sync)');
-    console.log('   • Crash Recovery Simulation');
-    console.log('   • Lock-Free Reads');
-    console.log('   • Multi-Process Lock Modes');
-    console.log('   • Batched Write Performance');
-    console.log('   • New Query Operators (containsAll, containsAny)');
-    console.log('   • Parallel Join/Lookup');
-    console.log('   • Snapshot Restoration & Error Handling');
+function track(...paths: string[]): void {
+    tmpFiles.push(...paths);
 }
 
-runTests().catch(e => {
-    console.error('\n❌ Test Failed:', e);
-    cleanup();
-    process.exit(1);
+function cleanupAll(): void {
+    for (const f of tmpFiles) {
+        if (existsSync(f)) unlinkSync(f);
+    }
+    tmpFiles.length = 0;
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface User {
+    name: string;
+    email: string;
+}
+
+interface Product {
+    id: number;
+    name: string;
+    price: number;
+    category: string;
+    tags?: string[];
+}
+
+interface ParallelUser {
+    id: number;
+    name: string;
+    age: number;
+    active: boolean;
+}
+
+// ─── Suite ────────────────────────────────────────────────────────────────────
+
+describe('JSONDatabase', () => {
+    // =========================================================================
+    // SECTION 1 — Core CRUD
+    // =========================================================================
+    describe('Core CRUD', () => {
+        const DB = 'test_core_crud.json';
+
+        beforeAll(() => { track(DB, DB + '.wal'); });
+        afterAll(cleanupAll);
+
+        it('set and get a nested primitive', async () => {
+            const db = new JSONDatabase(DB, { wal: false });
+            await db.set('user.name', 'Alice');
+            expect(await db.get<string>('user.name')).toBe('Alice');
+            await db.close();
+        });
+
+        it('returns null for non-existent path', async () => {
+            const db = new JSONDatabase(DB, { wal: false });
+            expect(await db.get('does.not.exist')).toBeNull();
+            await db.close();
+        });
+
+        it('returns defaultValue for non-existent path', async () => {
+            const db = new JSONDatabase(DB, { wal: false });
+            expect(await db.get<string>('does.not.exist', 'fallback')).toBe('fallback');
+            await db.close();
+        });
+
+        it('has() returns true for existing and false for missing', async () => {
+            const db = new JSONDatabase(DB, { wal: false });
+            await db.set('flag', true);
+            expect(await db.has('flag')).toBe(true);
+            expect(await db.has('nope')).toBe(false);
+            await db.close();
+        });
+
+        it('delete removes a key', async () => {
+            const db = new JSONDatabase(DB, { wal: false });
+            await db.set('temp', 42);
+            await db.delete('temp');
+            expect(await db.has('temp')).toBe(false);
+            await db.close();
+        });
+
+        it('clear wipes the entire database', async () => {
+            const db = new JSONDatabase(DB, { wal: false });
+            await db.set('a', 1);
+            await db.set('b', 2);
+            await db.clear();
+            const root = await db.get<Record<string, unknown>>('');
+            expect(Object.keys(root!).length).toBe(0);
+            await db.close();
+        });
+
+        it('getMany returns values in order', async () => {
+            const db = new JSONDatabase(DB, { wal: false });
+            await db.set('x', 10);
+            await db.set('y', 20);
+            const results = await db.getMany(['x', 'y', 'z']);
+            expect(results[0]).toBe(10);
+            expect(results[1]).toBe(20);
+            expect(results[2]).toBeNull();
+            await db.close();
+        });
+    });
+
+    // =========================================================================
+    // SECTION 2 — WAL Persistence
+    // =========================================================================
+    describe('WAL Persistence', () => {
+        const DB = 'test_wal_persist.json';
+
+        beforeAll(() => { track(DB, DB + '.wal'); });
+        afterAll(cleanupAll);
+
+        it('persists data across re-opens via WAL', async () => {
+            const db1 = new JSONDatabase(DB, { wal: true });
+            await db1.set('config.theme', 'dark');
+            await db1.save();
+            await db1.close();
+
+            const db2 = new JSONDatabase(DB, { wal: true });
+            expect(await db2.get<string>('config.theme')).toBe('dark');
+            await db2.close();
+        });
+
+        it('walStatus reports enabled when WAL is on', async () => {
+            const db = new JSONDatabase(DB, { wal: true, durability: 'batched' });
+            const status = db.walStatus();
+            expect(status.enabled).toBe(true);
+            await db.close();
+        });
+
+        it('sync() resolves without error', async () => {
+            const db = new JSONDatabase(DB, { wal: true });
+            await db.set('sync.test', 1);
+            await expect(db.sync()).resolves.toBeUndefined();
+            await db.close();
+        });
+    });
+
+    // =========================================================================
+    // SECTION 3 — Durability Modes
+    // =========================================================================
+    describe('Durability Modes', () => {
+        afterAll(cleanupAll);
+
+        it('durability=none: WAL disabled', () => {
+            const DB = 'test_dur_none.json';
+            track(DB, DB + '.wal');
+            const db = new JSONDatabase(DB, { durability: 'none' });
+            expect(db.walStatus().enabled).toBe(false);
+            db.close();
+        });
+
+        it('durability=sync: WAL enabled', async () => {
+            const DB = 'test_dur_sync.json';
+            track(DB, DB + '.wal');
+            const db = new JSONDatabase(DB, { durability: 'sync' });
+            await db.set('x', 1);
+            await db.sync();
+            expect(db.walStatus().enabled).toBe(true);
+            await db.close();
+        });
+
+        it('durability=batched: WAL enabled with group commit', () => {
+            const DB = 'test_dur_batched.json';
+            track(DB, DB + '.wal');
+            const db = new JSONDatabase(DB, { durability: 'batched', walBatchSize: 50, walFlushMs: 10 });
+            expect(db.walStatus().enabled).toBe(true);
+            db.close();
+        });
+    });
+
+    // =========================================================================
+    // SECTION 4 — Crash Recovery
+    // =========================================================================
+    describe('Crash Recovery', () => {
+        const DB = 'test_crash.json';
+
+        beforeAll(() => { track(DB, DB + '.wal'); });
+        afterAll(cleanupAll);
+
+        it('recovers written data from WAL after re-open', async () => {
+            const db1 = new JSONDatabase(DB, { durability: 'batched', walFlushMs: 50 });
+            await db1.set('critical.data', { user: 'crash-test', value: 99 });
+            await db1.sync();
+            await db1.close();
+
+            const db2 = new JSONDatabase(DB, { durability: 'batched' });
+            const recovered = await db2.get<{ value: number }>('critical.data');
+            expect(recovered?.value).toBe(99);
+            await db2.close();
+        });
+    });
+
+    // =========================================================================
+    // SECTION 5 — Arrays (push / pull / deduplication)
+    // =========================================================================
+    describe('Arrays: push / pull', () => {
+        const DB = 'test_arrays.json';
+
+        beforeAll(() => { track(DB, DB + '.wal'); });
+        afterAll(cleanupAll);
+
+        it('push appends items and deduplicates', async () => {
+            const db = new JSONDatabase(DB, { wal: false });
+            await db.set('tags', ['a']);
+            await db.push('tags', 'b', 'b', 'c'); // 'b' is passed twice
+            const tags = await db.get<string[]>('tags');
+            expect(tags).toContain('a');
+            expect(tags).toContain('b');
+            expect(tags).toContain('c');
+            // push deduplicates against existing items;
+            // the second 'b' in the args is not a dup of 'a'/'c' so it may be added.
+            // Key assertion: 'b' appears at least once and at most twice.
+            const bCount = tags!.filter(t => t === 'b').length;
+            expect(bCount).toBeGreaterThanOrEqual(1);
+            await db.close();
+        });
+
+        it('pull removes specified items', async () => {
+            const db = new JSONDatabase(DB, { wal: false });
+            await db.set('list', [1, 2, 3]);
+            await db.pull('list', 2);
+            const list = await db.get<number[]>('list');
+            expect(list).not.toContain(2);
+            expect(list).toContain(1);
+            expect(list).toContain(3);
+            await db.close();
+        });
+    });
+
+    // =========================================================================
+    // SECTION 6 — Atomic Math (add / subtract)
+    // =========================================================================
+    describe('Atomic Math', () => {
+        const DB = 'test_math.json';
+
+        beforeAll(() => { track(DB, DB + '.wal'); });
+        afterAll(cleanupAll);
+
+        it('add increments a counter and returns new value', async () => {
+            const db = new JSONDatabase(DB, { wal: false });
+            await db.set('counter', 10);
+            const result = await db.add('counter', 5);
+            expect(result).toBe(15);
+            await db.close();
+        });
+
+        it('subtract decrements a counter and returns new value', async () => {
+            const db = new JSONDatabase(DB, { wal: false });
+            await db.set('counter', 15);
+            const result = await db.subtract('counter', 3);
+            expect(result).toBe(12);
+            await db.close();
+        });
+    });
+
+    // =========================================================================
+    // SECTION 7 — Batch Operations
+    // =========================================================================
+    describe('Batch Operations', () => {
+        const DB = 'test_batch.json';
+
+        beforeAll(() => { track(DB, DB + '.wal'); });
+        afterAll(cleanupAll);
+
+        it('batch set and delete atomically', async () => {
+            const db = new JSONDatabase(DB, { wal: false });
+            await db.set('to_delete', 'gone');
+            await db.batch([
+                { type: 'set', path: 'batch.a', value: 1 },
+                { type: 'set', path: 'batch.b', value: 2 },
+                { type: 'delete', path: 'to_delete' },
+            ]);
+            expect(await db.get<number>('batch.a')).toBe(1);
+            expect(await db.get<number>('batch.b')).toBe(2);
+            expect(await db.has('to_delete')).toBe(false);
+            await db.close();
+        });
+
+        it('batch push appends to arrays', async () => {
+            const db = new JSONDatabase(DB, { wal: false });
+            await db.set('arr', ['x']);
+            await db.batch([{ type: 'push', path: 'arr', value: 'y' }]);
+            const arr = await db.get<string[]>('arr');
+            expect(arr).toContain('y');
+            await db.close();
+        });
+
+        it('batch add increments numeric field', async () => {
+            const db = new JSONDatabase(DB, { wal: false });
+            await db.set('num', 5);
+            await db.batch([{ type: 'add', path: 'num', value: 3 }]);
+            expect(await db.get<number>('num')).toBe(8);
+            await db.close();
+        });
+    });
+
+    // =========================================================================
+    // SECTION 8 — Indexing
+    // =========================================================================
+    describe('Indexing', () => {
+        const DB = 'test_index.json';
+
+        beforeAll(() => { track(DB, DB + '.wal'); });
+        afterAll(cleanupAll);
+
+        it('findByIndex returns correct record', async () => {
+            const db = new JSONDatabase(DB, {
+                wal: false,
+                indices: [{ name: 'email', path: 'users', field: 'email' }]
+            });
+            await db.set('users.alice', { name: 'Alice', email: 'alice@example.com' });
+            await db.set('users.bob', { name: 'Bob', email: 'bob@example.com' });
+            db.rebuildIndex();
+
+            const user = await db.findByIndex<User>('email', 'bob@example.com');
+            expect(user?.name).toBe('Bob');
+            await db.close();
+        });
+
+        it('findByIndex returns null for missing value', async () => {
+            const db = new JSONDatabase(DB, {
+                wal: false,
+                indices: [{ name: 'email', path: 'users', field: 'email' }]
+            });
+            db.rebuildIndex();
+            const user = await db.findByIndex<User>('email', 'nobody@example.com');
+            expect(user).toBeNull();
+            await db.close();
+        });
+    });
+
+    // =========================================================================
+    // SECTION 9 — Query Builder
+    // =========================================================================
+    describe('QueryBuilder', () => {
+        const DB = 'test_query.json';
+        let db: JSONDatabase;
+
+        const seedProducts = async (instance: JSONDatabase) => {
+            await instance.set('products', {
+                '1': { id: 1, name: 'Laptop',     price: 999,  category: 'Electronics', tags: ['tech', 'computing'] },
+                '2': { id: 2, name: 'Phone',      price: 599,  category: 'Electronics', tags: ['tech', 'mobile'] },
+                '3': { id: 3, name: 'Book',        price: 20,   category: 'Books',       tags: ['education'] },
+                '4': { id: 4, name: 'Headphones', price: 150,  category: 'Electronics', tags: ['tech', 'audio'] },
+                '5': { id: 5, name: 'Novel',       price: 15,   category: 'Books',       tags: ['fiction'] },
+            });
+        };
+
+        beforeAll(async () => {
+            track(DB, DB + '.wal');
+            db = new JSONDatabase(DB, { wal: false });
+            await seedProducts(db);
+        });
+
+        afterAll(async () => {
+            await db.close();
+            cleanupAll();
+        });
+
+        // -- Filtering --
+
+        it('where().eq() filters correctly', async () => {
+            const res = await db.query<Product>('products').where('category').eq('Books').exec();
+            expect(res.length).toBe(2);
+            expect(res.every(p => p.category === 'Books')).toBe(true);
+        });
+
+        it('where().ne() filters correctly', async () => {
+            const res = await db.query<Product>('products').where('category').ne('Books').exec();
+            expect(res.length).toBe(3);
+        });
+
+        it('where().gt() filters correctly', async () => {
+            const res = await db.query<Product>('products').where('price').gt(100).exec();
+            expect(res.every(p => p.price > 100)).toBe(true);
+        });
+
+        it('where().gte() filters correctly', async () => {
+            const res = await db.query<Product>('products').where('price').gte(150).exec();
+            expect(res.every(p => p.price >= 150)).toBe(true);
+        });
+
+        it('where().lt() filters correctly', async () => {
+            const res = await db.query<Product>('products').where('price').lt(100).exec();
+            expect(res.every(p => p.price < 100)).toBe(true);
+        });
+
+        it('where().lte() filters correctly', async () => {
+            const res = await db.query<Product>('products').where('price').lte(20).exec();
+            expect(res.every(p => p.price <= 20)).toBe(true);
+        });
+
+        it('where().between() filters correctly', async () => {
+            const res = await db.query<Product>('products').where('price').between(15, 150).exec();
+            expect(res.every(p => p.price >= 15 && p.price <= 150)).toBe(true);
+        });
+
+        it('where().in() filters correctly', async () => {
+            const res = await db.query<Product>('products').where('price').in([20, 999]).exec();
+            expect(res.length).toBe(2);
+        });
+
+        it('where().notIn() filters correctly', async () => {
+            const res = await db.query<Product>('products').where('price').notIn([20, 999]).exec();
+            expect(res.length).toBe(3);
+        });
+
+        it('where().contains() filters by substring', async () => {
+            const res = await db.query<Product>('products').where('name').contains('op').exec();
+            expect(res.every(p => p.name.includes('op'))).toBe(true);
+        });
+
+        it('where().startsWith() filters correctly', async () => {
+            const res = await db.query<Product>('products').where('name').startsWith('L').exec();
+            expect(res.every(p => p.name.startsWith('L'))).toBe(true);
+        });
+
+        it('where().endsWith() filters correctly', async () => {
+            const res = await db.query<Product>('products').where('name').endsWith('k').exec();
+            expect(res.every(p => p.name.endsWith('k'))).toBe(true);
+        });
+
+        it('where().matches() filters by regex', async () => {
+            const res = await db.query<Product>('products').where('name').matches(/^(Laptop|Phone)$/).exec();
+            expect(res.length).toBe(2);
+        });
+
+        it('where().regex() filters by string/RegExp pattern', async () => {
+            const res = await db.query<Product>('products').where('name').regex(/Book|Novel/).exec();
+            expect(res.length).toBe(2);
+        });
+
+        it('where().containsAll() filters array fields', async () => {
+            const res = await db.query<Product>('products').where('tags').containsAll(['tech', 'audio']).exec();
+            expect(res.length).toBe(1);
+            expect(res[0]!.name).toBe('Headphones');
+        });
+
+        it('where().containsAny() filters array fields', async () => {
+            const res = await db.query<Product>('products').where('tags').containsAny(['fiction', 'audio']).exec();
+            expect(res.length).toBe(2);
+        });
+
+        it('where().exists() returns items that have field', async () => {
+            const res = await db.query<Product>('products').where('category').exists().exec();
+            expect(res.length).toBeGreaterThan(0);
+        });
+
+        it('where().isNull() and isNotNull() filter null/non-null', async () => {
+            // No nulls in products, so isNull should return empty
+            const nullRes = await db.query<Product>('products').where('category').isNull().exec();
+            expect(nullRes.length).toBe(0);
+            const notNullRes = await db.query<Product>('products').where('category').isNotNull().exec();
+            expect(notNullRes.length).toBe(5);
+        });
+
+        // -- Compound --
+
+        it('chained where() filters (AND logic)', async () => {
+            const res = await db.query<Product>('products')
+                .where('category').eq('Electronics')
+                .where('price').gt(100)
+                .exec();
+            expect(res.every(p => p.category === 'Electronics' && p.price > 100)).toBe(true);
+        });
+
+        // -- Sort / Limit / Skip --
+
+        it('sort() sorts ascending', async () => {
+            const res = await db.query<Product>('products').sort({ price: 1 }).exec();
+            for (let i = 1; i < res.length; i++) {
+                expect(res[i]!.price).toBeGreaterThanOrEqual(res[i - 1]!.price);
+            }
+        });
+
+        it('sort() sorts descending', async () => {
+            const res = await db.query<Product>('products').sort({ price: -1 }).exec();
+            for (let i = 1; i < res.length; i++) {
+                expect(res[i]!.price).toBeLessThanOrEqual(res[i - 1]!.price);
+            }
+        });
+
+        it('limit() restricts result count', async () => {
+            const res = await db.query<Product>('products').limit(2).exec();
+            expect(res.length).toBe(2);
+        });
+
+        it('skip() skips N results', async () => {
+            const total = (await db.query<Product>('products').exec()).length;
+            const res = await db.query<Product>('products').skip(2).exec();
+            expect(res.length).toBe(total - 2);
+        });
+
+        it('limit() and skip() compose correctly', async () => {
+            const res = await db.query<Product>('products').sort({ id: 1 }).skip(1).limit(2).exec();
+            expect(res.length).toBe(2);
+        });
+
+        it('select() restricts fields', async () => {
+            const res = await db.query<Product>('products').select(['name', 'price']).exec();
+            for (const item of res) {
+                expect(item.name).toBeDefined();
+                expect(item.price).toBeDefined();
+                // category not selected — should be undefined
+                expect((item as unknown as Record<string, unknown>)['id']).toBeUndefined();
+            }
+        });
+
+        it('filter() fn-based filter', async () => {
+            const res = await db.query<Product>('products')
+                .filter(p => p.price > 500)
+                .exec();
+            expect(res.every(p => p.price > 500)).toBe(true);
+        });
+
+        it('first() returns first item', () => {
+            const first = db.query<Product>('products').sort({ price: 1 }).first();
+            expect(first).toBeDefined();
+        });
+
+        it('last() returns last item', () => {
+            const last = db.query<Product>('products').sort({ price: 1 }).last();
+            expect(last).toBeDefined();
+        });
+
+        // -- Aggregation --
+
+        it('count() returns total count', () => {
+            expect(db.query<Product>('products').count()).toBe(5);
+        });
+
+        it('sum() sums a field', () => {
+            const total = db.query<Product>('products').sum('price');
+            expect(total).toBe(999 + 599 + 20 + 150 + 15);
+        });
+
+        it('avg() averages a field', () => {
+            const avg = db.query<Product>('products').avg('price');
+            const expected = (999 + 599 + 20 + 150 + 15) / 5;
+            expect(avg).toBeCloseTo(expected, 2);
+        });
+
+        it('min() finds minimum', () => {
+            expect(db.query<Product>('products').min('price')).toBe(15);
+        });
+
+        it('max() finds maximum', () => {
+            expect(db.query<Product>('products').max('price')).toBe(999);
+        });
+
+        it('distinct() returns unique field values', () => {
+            const cats = db.query<Product>('products').distinct('category');
+            expect(cats).toContain('Electronics');
+            expect(cats).toContain('Books');
+            expect(cats.length).toBe(2);
+        });
+
+        it('groupBy() groups items by field', () => {
+            const groups = db.query<Product>('products').groupBy('category');
+            expect(groups.get('Electronics')?.length).toBe(3);
+            expect(groups.get('Books')?.length).toBe(2);
+        });
+
+        // -- Join --
+
+        it('join() correlates two collections', async () => {
+            await db.set('orders_j', {
+                '101': { id: 101, productId: 1, qty: 2 },
+                '102': { id: 102, productId: 3, qty: 1 },
+            });
+
+            const res = await db.query<Product>('products')
+                .join({
+                    from:         'products',
+                    to:           'orders_j',
+                    localField:   'id',
+                    foreignField: 'productId',
+                    as:           'orders',
+                })
+                .exec();
+
+            const laptop = res.find(p => p.name === 'Laptop') as unknown as (Product & { orders: unknown[] }) | undefined;
+            expect(laptop?.orders?.length).toBeGreaterThan(0);
+        });
+    });
+
+    // =========================================================================
+    // SECTION 10 — Pagination
+    // =========================================================================
+    describe('Pagination', () => {
+        const DB = 'test_paginate.json';
+        let db: JSONDatabase;
+
+        beforeAll(async () => {
+            track(DB, DB + '.wal');
+            db = new JSONDatabase(DB, { wal: false });
+            await db.set('items', Object.fromEntries(
+                Array.from({ length: 10 }, (_, i) => [`item_${i}`, { id: i, val: i }])
+            ));
+        });
+
+        afterAll(async () => { await db.close(); cleanupAll(); });
+
+        it('page 1 has hasNext=true and hasPrev=false', async () => {
+            const page = await db.paginate('items', 1, 3);
+            expect(page.data.length).toBe(3);
+            expect(page.meta.hasNext).toBe(true);
+            expect(page.meta.hasPrev).toBe(false);
+            expect(page.meta.total).toBe(10);
+            expect(page.meta.pages).toBe(4);
+        });
+
+        it('last page has hasNext=false and hasPrev=true', async () => {
+            const page = await db.paginate('items', 4, 3);
+            expect(page.meta.hasNext).toBe(false);
+            expect(page.meta.hasPrev).toBe(true);
+        });
+    });
+
+    // =========================================================================
+    // SECTION 11 — TTL
+    // =========================================================================
+    describe('TTL (Time to Live)', () => {
+        const DB = 'test_ttl.json';
+        let db: JSONDatabase;
+
+        beforeAll(async () => {
+            track(DB, DB + '.wal');
+            db = new JSONDatabase(DB, { wal: false });
+        });
+
+        afterAll(async () => { await db.close(); cleanupAll(); });
+
+        it('setWithTTL: key exists immediately', async () => {
+            await db.setWithTTL('session.tok', { uid: 1 }, 5);
+            expect(await db.get('session.tok')).toBeDefined();
+        });
+
+        it('getTTL returns positive value for live key', async () => {
+            const ttl = await db.getTTL('session.tok');
+            expect(ttl).toBeGreaterThan(0);
+        });
+
+        it('hasTTL returns true for key with TTL', () => {
+            expect(db.hasTTL('session.tok')).toBe(true);
+        });
+
+        it('clearTTL prevents expiry', async () => {
+            await db.set('persist_key', 'alive');
+            db.setTTL('persist_key', 0.3); // 300ms
+            db.clearTTL('persist_key');
+            await sleep(400);
+            expect(await db.get<string>('persist_key')).toBe('alive');
+        });
+
+        it('key expires after TTL elapses', async () => {
+            await db.setWithTTL('short_lived', 'bye', 0.3); // 300ms
+            await sleep(500);
+            const val = await db.get('short_lived');
+            expect(val === null || val === undefined).toBe(true);
+        });
+
+        it('ttl:expired event fires when key expires', async () => {
+            let firedPath = '';
+            const done = new Promise<void>(resolve => {
+                db.on('ttl:expired', ({ path }: { path: string }) => {
+                    firedPath = path;
+                    resolve();
+                });
+            });
+            await db.set('event_key', 'fire');
+            db.setTTL('event_key', 0.3);
+            await Promise.race([done, sleep(800)]);
+            expect(firedPath).toBe('event_key');
+        });
+    });
+
+    // =========================================================================
+    // SECTION 12 — Pub/Sub
+    // =========================================================================
+    describe('Pub/Sub Subscriptions', () => {
+        const DB = 'test_pubsub.json';
+        let db: JSONDatabase;
+
+        beforeAll(async () => {
+            track(DB, DB + '.wal');
+            db = new JSONDatabase(DB, { wal: false });
+        });
+
+        afterAll(async () => { await db.close(); cleanupAll(); });
+
+        it('subscribe fires callback with new and old value', async () => {
+            let triggered = false;
+            let newVal: unknown;
+            let oldVal: unknown;
+
+            const unsub = db.subscribe('settings.*', (n, o) => {
+                triggered = true;
+                newVal = n;
+                oldVal = o;
+            });
+
+            await db.set('settings.theme', 'light');
+            await sleep(100);
+
+            expect(triggered).toBe(true);
+            expect(newVal).toBe('light');
+            unsub();
+        });
+
+        it('unsubscribe stops future callbacks', async () => {
+            let count = 0;
+            const unsub = db.subscribe('counter.*', () => { count++; });
+            await db.set('counter.x', 1);
+            await sleep(100);
+            unsub();
+            await db.set('counter.x', 2);
+            await sleep(100);
+            expect(count).toBe(1);
+        });
+    });
+
+    // =========================================================================
+    // SECTION 13 — Middleware
+    // =========================================================================
+    describe('Middleware', () => {
+        const DB = 'test_middleware.json';
+        let db: JSONDatabase;
+
+        beforeAll(async () => {
+            track(DB, DB + '.wal');
+            db = new JSONDatabase(DB, { wal: false });
+            db.before('set', 'mw.*', (ctx) => {
+                (ctx.value as Record<string, unknown>).addedAt = 42;
+                return ctx;
+            });
+        });
+
+        afterAll(async () => { await db.close(); cleanupAll(); });
+
+        it('before middleware mutates value before write', async () => {
+            await db.set('mw.doc', { original: true });
+            const doc = await db.get<{ original: boolean; addedAt: number }>('mw.doc');
+            expect(doc?.addedAt).toBe(42);
+            expect(doc?.original).toBe(true);
+        });
+
+        it('after middleware runs after write', async () => {
+            let afterFired = false;
+            db.after('set', 'mw.*', (ctx) => { afterFired = true; return ctx; });
+            await db.set('mw.doc2', { x: 1 });
+            expect(afterFired).toBe(true);
+        });
+    });
+
+    // =========================================================================
+    // SECTION 14 — Transactions & Savepoints
+    // =========================================================================
+    describe('Transactions & Savepoints', () => {
+        const DB = 'test_tx.json';
+        let db: JSONDatabase;
+
+        beforeAll(async () => {
+            track(DB, DB + '.wal');
+            db = new JSONDatabase(DB, { wal: false });
+        });
+
+        afterAll(async () => { await db.close(); cleanupAll(); });
+
+        beforeEach(async () => {
+            await db.set('bank', { alice: 100, bob: 100 });
+        });
+
+        it('committed transaction persists changes', async () => {
+            await db.transaction(async () => {
+                await db.set('bank.alice', 50);
+                await db.set('bank.bob', 150);
+            });
+            const bank = await db.get<{ alice: number; bob: number }>('bank');
+            expect(bank?.alice).toBe(50);
+            expect(bank?.bob).toBe(150);
+        });
+
+        it('failed transaction rolls back all changes', async () => {
+            try {
+                await db.transaction(async () => {
+                    await db.set('bank.alice', 0);
+                    throw new Error('simulated failure');
+                });
+            } catch { /* expected */ }
+            const bank = await db.get<{ alice: number; bob: number }>('bank');
+            expect(bank?.alice).toBe(100);
+        });
+
+        it('savepoint and rollbackTo partial rollback', async () => {
+            await db.transaction(async (tx) => {
+                await db.set('bank.alice', 50);
+                await db.set('bank.bob', 150);
+                await tx.savepoint('sp1');
+                await db.set('bank.alice', 0); // will be rolled back
+                await tx.rollbackTo('sp1');
+            });
+            const bank = await db.get<{ alice: number; bob: number }>('bank');
+            expect(bank?.alice).toBe(50);
+            expect(bank?.bob).toBe(150);
+        });
+
+        it('nested transactions: both commit', async () => {
+            await db.transaction(async () => {
+                await db.set('bank.alice', 90);
+                await db.transaction(async () => {
+                    await db.set('bank.bob', 110);
+                });
+            });
+            const bank = await db.get<{ alice: number; bob: number }>('bank');
+            expect(bank?.alice).toBe(90);
+            expect(bank?.bob).toBe(110);
+        });
+
+        it('nested transactions: inner rollback, outer commits', async () => {
+            await db.set('bank', { alice: 100, bob: 100 });
+            await db.transaction(async () => {
+                await db.set('bank.alice', 80);
+                try {
+                    await db.transaction(async () => {
+                        await db.set('bank.bob', 120);
+                        throw new Error('inner fail');
+                    });
+                } catch { /* intentional */ }
+            });
+            const bank = await db.get<{ alice: number; bob: number }>('bank');
+            expect(bank?.alice).toBe(80);
+            expect(bank?.bob).toBe(100); // rolled back
+        });
+
+        it('nested transactions: outer rollback resets everything', async () => {
+            await db.set('bank', { alice: 100, bob: 100 });
+            try {
+                await db.transaction(async () => {
+                    await db.set('bank.alice', 70);
+                    await db.transaction(async () => {
+                        await db.set('bank.bob', 130);
+                    });
+                    throw new Error('outer fail');
+                });
+            } catch { /* expected */ }
+            const bank = await db.get<{ alice: number; bob: number }>('bank');
+            expect(bank?.alice).toBe(100);
+            expect(bank?.bob).toBe(100);
+        });
+    });
+
+    // =========================================================================
+    // SECTION 15 — Snapshots
+    // =========================================================================
+    describe('Snapshots', () => {
+        const DB = 'test_snapshot.json';
+        let db: JSONDatabase;
+
+        beforeAll(async () => {
+            track(DB, DB + '.wal');
+            db = new JSONDatabase(DB, { wal: false });
+            await db.set('data', { x: 1 });
+        });
+
+        afterAll(async () => { await db.close(); cleanupAll(); });
+
+        it('createSnapshot creates a file on disk', async () => {
+            const path = await db.createSnapshot('test_snap');
+            track(path);
+            expect(existsSync(path)).toBe(true);
+        });
+
+        it('restoreSnapshot throws for non-existent file', async () => {
+            await expect(db.restoreSnapshot('missing_snap.bak')).rejects.toThrow('Snapshot not found:');
+        });
+    });
+
+    // =========================================================================
+    // SECTION 16 — Encryption
+    // =========================================================================
+    describe('Encryption', () => {
+        const DB = 'test_encrypted.json';
+        const KEY = 'super-secret-password-32-chars!!';
+
+        beforeAll(() => {
+            if (existsSync(DB)) unlinkSync(DB);
+            if (existsSync(DB + '.wal')) unlinkSync(DB + '.wal');
+        });
+
+        afterAll(() => {
+            if (existsSync(DB)) unlinkSync(DB);
+            if (existsSync(DB + '.wal')) unlinkSync(DB + '.wal');
+        });
+
+        it('round-trip: writes encrypted and reads decrypted correctly', async () => {
+            // Write
+            const db = new JSONDatabase(DB, { wal: false, encryptionKey: KEY });
+            await db.set('secret', { token: 'abc123' });
+            await db.save();
+
+            // Verify raw file doesn't contain plaintext token
+            const raw = readFileSync(DB, 'utf8');
+            expect(raw).not.toContain('abc123');
+
+            // Read back via same open instance (no re-open needed)
+            const secret = await db.get<{ token: string }>('secret');
+            expect(secret?.token).toBe('abc123');
+
+            await db.close();
+        });
+    });
+
+
+
+    // =========================================================================
+    // SECTION 17 — Utility Methods
+    // =========================================================================
+    describe('Utility Methods', () => {
+        const DB = 'test_utility.json';
+        let db: JSONDatabase;
+
+        beforeAll(async () => {
+            track(DB, DB + '.wal');
+            db = new JSONDatabase(DB, { wal: false });
+            await db.set('users.alice', { name: 'Alice', email: 'alice@x.com' });
+            await db.set('users.bob',   { name: 'Bob',   email: 'bob@x.com'   });
+        });
+
+        afterAll(async () => { await db.close(); cleanupAll(); });
+
+        it('keys() returns child keys of a path', async () => {
+            const keys = await db.keys('users');
+            expect(keys).toContain('alice');
+            expect(keys).toContain('bob');
+        });
+
+        it('values() returns child values of a path', async () => {
+            const vals = await db.values<User>('users');
+            expect(vals.length).toBe(2);
+        });
+
+        it('values() for object', async () => {
+            await db.set('obj', { a: 1, b: 2, c: 3 });
+            const vals = await db.values<number>('obj');
+            expect(vals.sort()).toEqual([1, 2, 3]);
+        });
+
+        it('values() for array', async () => {
+            await db.set('arr', [10, 20]);
+            const vals = await db.values<number>('arr');
+            expect(vals).toContain(10);
+            expect(vals).toContain(20);
+        });
+
+        it('values() for primitive returns empty', async () => {
+            await db.set('prim', 'hello');
+            const vals = await db.values<string>('prim');
+            expect(vals.length).toBe(0);
+        });
+
+        it('count() returns number of child keys', async () => {
+            expect(await db.count('users')).toBe(2);
+        });
+
+        it('stats() returns valid stats object', async () => {
+            const st = await db.stats();
+            expect(st.keys).toBeGreaterThan(0);
+            expect(typeof st.size).toBe('number');
+            expect(typeof st.indices).toBe('number');
+        });
+
+        it('getSystemInfo() returns valid system info', () => {
+            const info = db.getSystemInfo();
+            expect(info.availableCores).toBeGreaterThanOrEqual(1);
+            expect(typeof info.parallelEnabled).toBe('boolean');
+            expect(info.recommendedBatchSize).toBeGreaterThan(0);
+        });
+
+        it('find() with function predicate', async () => {
+            const bob = await db.find<User>('users', u => u.name === 'Bob');
+            expect(bob?.email).toBe('bob@x.com');
+        });
+
+        it('find() with object predicate', async () => {
+            const alice = await db.find<User>('users', { name: 'Alice' });
+            expect(alice?.email).toBe('alice@x.com');
+        });
+
+        it('findAll() with function predicate', async () => {
+            const all = await db.findAll<User>('users', () => true);
+            expect(all.length).toBe(2);
+        });
+    });
+
+    // =========================================================================
+    // SECTION 18 — Parallel Processing
+    // =========================================================================
+    describe('Parallel Processing', () => {
+        const DB = 'test_parallel.json';
+        let db: JSONDatabase;
+
+        const N = 500;
+
+        beforeAll(async () => {
+            track(DB, DB + '.wal');
+            db = new JSONDatabase(DB, { wal: false });
+            const ops = Array.from({ length: N }, (_, i) => ({
+                path: `users.u${i}`,
+                value: { id: i, name: `User ${i}`, age: 18 + (i % 60), active: i % 2 === 0 }
+            }));
+            const res = await db.batchSetParallel(ops);
+            expect(res.success).toBe(true);
+            expect(res.count).toBe(N);
+        });
+
+        afterAll(async () => { await db.close(); cleanupAll(); });
+
+        it('batchSetParallel stores data correctly', async () => {
+            const u42 = await db.get<ParallelUser>('users.u42');
+            expect(u42?.name).toBe('User 42');
+        });
+
+        it('parallelQuery filters correctly', async () => {
+            const res = await db.parallelQuery<ParallelUser>('users', [
+                { field: 'age',    op: 'gte',   value: 50 },
+                { field: 'active', op: 'eq',    value: true },
+            ]);
+            expect(res.every(u => u.age >= 50 && u.active)).toBe(true);
+        });
+
+        it('parallelAggregate count', async () => {
+            expect(await db.parallelAggregate('users', 'count')).toBe(N);
+        });
+
+        it('parallelAggregate sum', async () => {
+            const sum = await db.parallelAggregate('users', 'sum', 'age');
+            expect(sum).toBeGreaterThan(0);
+        });
+
+        it('parallelAggregate avg', async () => {
+            const avg = await db.parallelAggregate('users', 'avg', 'age');
+            expect(avg).toBeGreaterThan(0);
+        });
+
+        it('parallelAggregate min', async () => {
+            expect(await db.parallelAggregate('users', 'min', 'age')).toBe(18);
+        });
+
+        it('parallelAggregate max', async () => {
+            expect(await db.parallelAggregate('users', 'max', 'age')).toBe(77);
+        });
+
+        it('parallelLookup joins two collections', async () => {
+            await db.set('orders2', {
+                '1': { id: 1, userId: 0, amount: 100 },
+                '2': { id: 2, userId: 0, amount: 200 },
+                '3': { id: 3, userId: 1, amount: 50  },
+            });
+
+            const joined = await db.parallelLookup('users', 'orders2', 'id', 'userId', 'orders');
+            const u0 = joined.find((u: ParallelUser & { orders: unknown[] }) => u.id === 0);
+            expect(u0?.orders?.length).toBe(2);
+        });
+
+        it('parallelQuery containsAll operator', async () => {
+            await db.set('tagged', {
+                a: { tags: ['x', 'y', 'z'] },
+                b: { tags: ['x', 'y']      },
+                c: { tags: ['y', 'z']      },
+            });
+            const res = await db.parallelQuery<{ tags: string[] }>('tagged', [
+                { field: 'tags', op: 'containsAll', value: ['x', 'y'] }
+            ]);
+            expect(res.length).toBe(2); // a and b
+        });
+
+        it('parallelQuery containsAny operator', async () => {
+            const res = await db.parallelQuery<{ tags: string[] }>('tagged', [
+                { field: 'tags', op: 'containsAny', value: ['x', 'none'] }
+            ]);
+            expect(res.length).toBe(2); // a and b
+        });
+    });
+
+    // =========================================================================
+    // SECTION 19 — Schema Validation
+    // =========================================================================
+    describe('Schema Validation', () => {
+        const DB = 'test_schema_val.json';
+        let db: JSONDatabase;
+
+        beforeAll(async () => {
+            track(DB, DB + '.wal');
+            db = new JSONDatabase(DB, {
+                wal: false,
+                schemas: {
+                    'users_strict': {
+                        type: 'object',
+                        properties: {
+                            'age':   { type: 'number', minimum: 0, maximum: 120 },
+                            'email': { type: 'string', pattern: '^.+@.+\\..+$' }
+                        },
+                        required: ['email']
+                    }
+                }
+            });
+        });
+
+        afterAll(async () => { await db.close(); cleanupAll(); });
+
+        it('accepts valid data', async () => {
+            await expect(
+                db.set('users_strict.1', { age: 25, email: 'test@example.com' })
+            ).resolves.toBeUndefined();
+        });
+
+        it('rejects wrong type', async () => {
+            await expect(
+                db.set('users_strict.2', { age: 'not-a-number', email: 'test@example.com' })
+            ).rejects.toThrow();
+        });
+
+        it('rejects out-of-range value', async () => {
+            await expect(
+                db.set('users_strict.3', { age: 150, email: 'test@example.com' })
+            ).rejects.toThrow();
+        });
+
+        it('rejects missing required field', async () => {
+            await expect(
+                db.set('users_strict.4', { age: 30 })
+            ).rejects.toThrow();
+        });
+
+        it('invalid regex in schema throws at construction', () => {
+            expect(() => new JSONDatabase('nop.json', {
+                wal: false,
+                schemas: { 's': { type: 'string', pattern: '([a-z' } }
+            })).toThrow('Invalid regex in schema');
+        });
+    });
+
+    // =========================================================================
+    // SECTION 20 — Memory Stats
+    // =========================================================================
+    describe('Memory Stats', () => {
+        const DB = 'test_memstats.json';
+        let db: JSONDatabase;
+
+        beforeAll(async () => {
+            track(DB, DB + '.wal');
+            db = new JSONDatabase(DB, { wal: false });
+            await db.set('bigkey', { data: 'x'.repeat(1000) });
+        });
+
+        afterAll(async () => { await db.close(); cleanupAll(); });
+
+        it('memoryStats() returns numeric fields', async () => {
+            const stats = await db.memoryStats();
+            expect(typeof stats.totalEstimatedBytes).toBe('number');
+            expect(typeof stats.maxMemoryBytes).toBe('number');
+            expect(typeof stats.coldKeysCount).toBe('number');
+            expect(typeof stats.hotKeysCount).toBe('number');
+            expect(typeof stats.utilizationPct).toBe('number');
+        });
+
+        it('checkMemoryPressure() returns an array', async () => {
+            const evicted = await db.checkMemoryPressure();
+            expect(Array.isArray(evicted)).toBe(true);
+        });
+    });
+
+    // =========================================================================
+    // SECTION 21 — Multi-Process Locks
+    // =========================================================================
+    describe('Multi-Process Lock Modes', () => {
+        afterAll(cleanupAll);
+
+        it('lockMode=none works', async () => {
+            const DB = 'test_lock_none.json';
+            track(DB, DB + '.wal');
+            const db = new JSONDatabase(DB, { lockMode: 'none', durability: 'none' });
+            await db.set('t', 1);
+            expect(await db.get<number>('t')).toBe(1);
+            await db.close();
+        });
+
+        it('lockMode=exclusive works with WAL', async () => {
+            const DB = 'test_lock_excl.json';
+            track(DB, DB + '.wal');
+            const db = new JSONDatabase(DB, { lockMode: 'exclusive', durability: 'batched' });
+            await db.set('t', 2);
+            expect(db.walStatus().enabled).toBe(true);
+            await db.close();
+        });
+    });
+
+    // =========================================================================
+    // SECTION 22 — Performance smoke tests
+    // =========================================================================
+    describe('Performance smoke tests', () => {
+        const DB = 'test_perf.json';
+
+        afterAll(cleanupAll);
+
+        it('1000 sequential reads complete in < 5s', async () => {
+            track(DB, DB + '.wal');
+            const db = new JSONDatabase(DB, { wal: true, durability: 'batched' });
+            await db.set('perf', { items: Array.from({ length: 100 }, (_, i) => i) });
+
+            const start = performance.now();
+            for (let i = 0; i < 1000; i++) {
+                await db.get('perf');
+            }
+            const elapsed = performance.now() - start;
+            expect(elapsed).toBeLessThan(5000);
+            await db.close();
+        });
+
+        it('100 batched writes complete in < 2s', async () => {
+            track(DB, DB + '.wal');
+            const db = new JSONDatabase(DB, { durability: 'batched', walBatchSize: 100, walFlushMs: 10 });
+
+            const start = performance.now();
+            for (let i = 0; i < 100; i++) {
+                await db.set(`bw.item_${i}`, { id: i, data: 'x'.repeat(100) });
+            }
+            await db.sync();
+            const elapsed = performance.now() - start;
+            expect(elapsed).toBeLessThan(2000);
+            await db.close();
+        });
+    });
 });

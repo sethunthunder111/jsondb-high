@@ -1,108 +1,82 @@
+import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { JSONDatabase } from '../index.ts';
 import { unlinkSync, existsSync } from 'fs';
 
 const TEST_DB = 'test_subquery.json';
 
-const cleanup = () => {
-    if (existsSync(TEST_DB)) unlinkSync(TEST_DB);
-    if (existsSync(TEST_DB + '.wal')) unlinkSync(TEST_DB + '.wal');
-};
+describe('Subquery Operators', () => {
+    let db: JSONDatabase;
 
-cleanup();
+    beforeAll(async () => {
+        if (existsSync(TEST_DB)) unlinkSync(TEST_DB);
+        if (existsSync(TEST_DB + '.wal')) unlinkSync(TEST_DB + '.wal');
 
-async function runTests() {
-    console.log('🚀 === Subquery Test Suite ===\n');
-    const db = new JSONDatabase(TEST_DB, { wal: false });
+        db = new JSONDatabase(TEST_DB, { wal: false });
 
-    // Setup data
-    // Orders: total amount = 100 + 200 + 300 = 600.
-    // Avg amount = 600 / 3 = 200.
-    await db.set('orders', [
-        { id: 1, amount: 100 },
-        { id: 2, amount: 200 },
-        { id: 3, amount: 300 }
-    ]);
+        // Orders: sum=600, avg=200
+        await db.set('orders', [
+            { id: 1, amount: 100 },
+            { id: 2, amount: 200 },
+            { id: 3, amount: 300 },
+        ]);
 
-    await db.set('items', [
-        { name: 'ItemSum', price: 600 },
-        { name: 'ItemAvg', price: 200 },
-        { name: 'ItemHigh', price: 800 },
-        { name: 'ItemLow', price: 50 },
-        { name: 'ItemIn', price: 100 }
-    ]);
+        await db.set('items', [
+            { name: 'ItemSum',  price: 600 },
+            { name: 'ItemAvg',  price: 200 },
+            { name: 'ItemHigh', price: 800 },
+            { name: 'ItemLow',  price: 50  },
+            { name: 'ItemIn',   price: 100 },
+        ]);
+    });
 
-    // Test eqSubquery (Sum)
-    // Should find ItemSum (price 600 == sum(orders.amount))
-    console.log('Test eqSubquery (Sum)');
-    const qbSum = await db.query('items')
-        .where('price').eqSubquery({ path: 'orders', op: 'sum', field: 'amount' });
-    const eqSum = await qbSum.exec();
-    console.log('   Items with price equal to sum of orders:', eqSum);
+    afterAll(async () => {
+        await db.close();
+        if (existsSync(TEST_DB)) unlinkSync(TEST_DB);
+        if (existsSync(TEST_DB + '.wal')) unlinkSync(TEST_DB + '.wal');
+    });
 
-    if (eqSum.length !== 1 || (eqSum[0] as any).name !== 'ItemSum') {
-        throw new Error(`eqSubquery (Sum) failed. Expected ItemSum, got ${JSON.stringify(eqSum)}`);
-    }
-    console.log('   ✅ Passed\n');
+    it('eqSubquery (sum): finds item whose price equals sum of orders.amount', async () => {
+        const qb = await db.query('items')
+            .where('price').eqSubquery({ path: 'orders', op: 'sum', field: 'amount' });
+        const result = await qb.exec();
 
-    // Test gtSubquery (Avg)
-    // Avg is 200. Items with price > 200 are ItemSum (600) and ItemHigh (800).
-    console.log('Test gtSubquery (Avg)');
-    const qbAvg = await db.query('items')
-        .where('price').gtSubquery({ path: 'orders', op: 'avg', field: 'amount' });
-    const gtAvg = await qbAvg.exec();
-    console.log('   Items with price greater than avg of orders:', gtAvg);
+        expect(result.length).toBe(1);
+        expect((result[0] as { name: string }).name).toBe('ItemSum');
+    });
 
-    if (gtAvg.length !== 2) {
-        throw new Error(`gtSubquery (Avg) failed. Expected 2 items, got ${gtAvg.length}`);
-    }
-    const gtNames = gtAvg.map(i => (i as any).name).sort();
-    if (gtNames[0] !== 'ItemHigh' || gtNames[1] !== 'ItemSum') {
-         throw new Error(`gtSubquery (Avg) failed. Expected ItemHigh, ItemSum, got ${gtNames}`);
-    }
-    console.log('   ✅ Passed\n');
+    it('gtSubquery (avg): finds items with price > avg of orders.amount', async () => {
+        // avg = 200 → ItemSum (600) and ItemHigh (800)
+        const qb = await db.query('items')
+            .where('price').gtSubquery({ path: 'orders', op: 'avg', field: 'amount' });
+        const result = await qb.exec();
 
-    // Test ltSubquery (Avg)
-    // Avg is 200. Items with price < 200 are ItemLow (50) and ItemIn (100).
-    console.log('Test ltSubquery (Avg)');
-    const qbLt = await db.query('items')
-        .where('price').ltSubquery({ path: 'orders', op: 'avg', field: 'amount' });
-    const ltAvg = await qbLt.exec();
-    console.log('   Items with price less than avg of orders:', ltAvg);
+        expect(result.length).toBe(2);
 
-    if (ltAvg.length !== 2) {
-        throw new Error(`ltSubquery (Avg) failed. Expected 2 items, got ${ltAvg.length}`);
-    }
-    const ltNames = ltAvg.map(i => (i as any).name).sort();
-    if (ltNames[0] !== 'ItemIn' || ltNames[1] !== 'ItemLow') {
-         throw new Error(`ltSubquery (Avg) failed. Expected ItemIn, ItemLow, got ${ltNames}`);
-    }
-    console.log('   ✅ Passed\n');
+        const names = result.map(i => (i as { name: string }).name).sort();
+        expect(names).toEqual(['ItemHigh', 'ItemSum']);
+    });
 
-    // Test inSubquery
-    // Orders have amounts [100, 200, 300].
-    // Items with price matching any order amount are ItemIn (100) and ItemAvg (200).
-    console.log('Test inSubquery');
-    const qbIn = await db.query('items')
-        .where('price').inSubquery({ path: 'orders', field: 'amount' });
-    const inSub = await qbIn.exec();
-    console.log('   Items with price in order amounts:', inSub);
+    it('ltSubquery (avg): finds items with price < avg of orders.amount', async () => {
+        // avg = 200 → ItemLow (50) and ItemIn (100)
+        const qb = await db.query('items')
+            .where('price').ltSubquery({ path: 'orders', op: 'avg', field: 'amount' });
+        const result = await qb.exec();
 
-    if (inSub.length !== 2) {
-        throw new Error(`inSubquery failed. Expected 2 items, got ${inSub.length}`);
-    }
-    const inNames = inSub.map(i => (i as any).name).sort();
-    if (inNames[0] !== 'ItemAvg' || inNames[1] !== 'ItemIn') {
-         throw new Error(`inSubquery failed. Expected ItemAvg, ItemIn, got ${inNames}`);
-    }
-    console.log('   ✅ Passed\n');
+        expect(result.length).toBe(2);
 
-    await db.close();
-    cleanup();
-    console.log('🎉 === Subquery Tests Passed! ===');
-}
+        const names = result.map(i => (i as { name: string }).name).sort();
+        expect(names).toEqual(['ItemIn', 'ItemLow']);
+    });
 
-runTests().catch(e => {
-    console.error('\n❌ Test Failed:', e);
-    cleanup();
-    process.exit(1);
+    it('inSubquery: finds items whose price appears in orders.amount list', async () => {
+        // order amounts = [100, 200, 300] → ItemIn (100) and ItemAvg (200)
+        const qb = await db.query('items')
+            .where('price').inSubquery({ path: 'orders', field: 'amount' });
+        const result = await qb.exec();
+
+        expect(result.length).toBe(2);
+
+        const names = result.map(i => (i as { name: string }).name).sort();
+        expect(names).toEqual(['ItemAvg', 'ItemIn']);
+    });
 });
