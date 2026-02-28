@@ -6,18 +6,13 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypt
 import { performance } from 'perf_hooks';
 import { isDeepStrictEqual } from 'util';
 
-// Load native binding
 // @ts-ignore
 import { NativeDb } from './index.js';
 
-// ============================================
-// TYPES & INTERFACES
-// ============================================
-
 export interface IndexConfig {
     name: string;
-    path: string; // e.g. 'users'
-    field: string; // e.g. 'email'
+    path: string;
+    field: string;
 }
 
 export interface JoinConfig {
@@ -66,90 +61,29 @@ export type MiddlewareFn<T = unknown> = (ctx: MiddlewareContext<T>) => Middlewar
 export interface DBOptions {
     indices?: IndexConfig[];
     wal?: boolean;
-    encryptionKey?: string; // 32 character password for AES-256-GCM
-    autoSaveInterval?: number; // ms, default 1000
+    encryptionKey?: string;
+    autoSaveInterval?: number;
     
-    // ============================================
-    // v4.5: Process Locking
-    // ============================================
-    /**
-     * Multi-process locking mode
-     * - 'exclusive': Acquire exclusive lock, prevent other processes (default for multi-process)
-     * - 'shared': Open read-only, fail if exclusive lock exists
-     * - 'none': No locking (fastest, single-process only, default for backwards compat)
-     */
     lockMode?: 'exclusive' | 'shared' | 'none';
     
-    /**
-     * Timeout to wait for lock (ms)
-     * Default: 0 (fail immediately if locked)
-     */
     lockTimeoutMs?: number;
     
-    // ============================================
-    // v4.5: Durability / WAL
-    // ============================================
-    /**
-     * Durability mode for writes
-     * - 'none': No WAL, manual save only (fastest, unsafe)
-     * - 'lazy': Write WAL, fsync every 100ms (~120k ops/sec, 100ms window)
-     * - 'batched': Group commit every 10ms (~80k ops/sec, 10ms window, recommended)
-     * - 'sync': Every write fsynced (~2k ops/sec, full ACID per op)
-     * Default: 'batched' if wal=true, 'none' otherwise
-     */
     durability?: 'none' | 'lazy' | 'batched' | 'sync';
     
-    /**
-     * WAL batch size for 'batched' mode
-     * Default: 1000 operations
-     */
     walBatchSize?: number;
     
-    /**
-     * WAL flush interval in ms for 'batched' mode
-     * Default: 10ms
-     */
     walFlushMs?: number;
     
-    /**
-     * Path-based schemas for validation
-     * e.g. { 'users': { type: 'object', properties: { ... } } }
-     */
     schemas?: Record<string, Schema>;
 
-    /**
-     * Threshold for slow query logging in ms
-     * Default: 100ms
-     */
     slowQueryThresholdMs?: number;
 
-    // ============================================
-    // v5.5: Memory Management
-    // ============================================
-    /**
-     * Maximum memory limit for the database.
-     * When approached, least-recently-used data is automatically offloaded to disk.
-     * Examples: '256mb', '1gb', '512mb'
-     * Default: '0' (disabled)
-     */
     memoryLimit?: string;
 
-    /**
-     * Directory for offloaded cold storage files.
-     * Default: '<dbFile>.cold/'
-     */
     coldStorageDir?: string;
 
-    /**
-     * Memory utilization percentage at which eviction starts.
-     * Default: 80
-     */
     evictionThresholdPct?: number;
 
-    /**
-     * Target memory utilization percentage after eviction.
-     * Default: 60
-     */
     evictionTargetPct?: number;
 }
 
@@ -183,10 +117,6 @@ export interface SortOptions {
     [key: string]: SortDirection;
 }
 
-// ============================================
-// PARALLEL PROCESSING INTERFACES
-// ============================================
-
 export interface SystemInfo {
     availableCores: number;
     parallelEnabled: boolean;
@@ -194,11 +124,8 @@ export interface SystemInfo {
 }
 
 export interface ParallelConfig {
-    /** Enable parallel processing (auto-detected by default) */
     enabled?: boolean;
-    /** Minimum items before using parallel processing (default: 100) */
     threshold?: number;
-    /** Maximum threads to use (default: auto-detected cores - 1) */
     maxThreads?: number;
 }
 
@@ -219,21 +146,10 @@ export interface Transaction {
     rollbackTo(name: string): Promise<void>;
 }
 
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
-
-/**
- * Simple Deep Equal Implementation
- */
 function deepEqual(a: unknown, b: unknown): boolean {
     return isDeepStrictEqual(a, b);
 }
 
-/**
- * Pattern matching for middleware paths (supports wildcards)
- * Uses a cache to avoid regex recompilation
- */
 const patternCache = new Map<string, RegExp>();
 
 function matchesPattern(pattern: string, path: string): boolean {
@@ -244,10 +160,6 @@ function matchesPattern(pattern: string, path: string): boolean {
     }
     return regex.test(path);
 }
-
-// ============================================
-// ENCRYPTION HELPERS
-// ============================================
 
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
@@ -268,7 +180,6 @@ function encrypt(data: string, password: string): string {
     encrypted += cipher.final('hex');
     const authTag = cipher.getAuthTag();
     
-    // Format: salt (hex) + iv (hex) + authTag (hex) + encrypted data
     return salt.toString('hex') + iv.toString('hex') + authTag.toString('hex') + encrypted;
 }
 
@@ -286,10 +197,6 @@ function decrypt(encryptedData: string, password: string): string {
     decrypted += decipher.final('utf8');
     return decrypted;
 }
-
-// ============================================
-// QUERY BUILDER (Fluent API)
-// ============================================
 
 type FilterFn<T> = (item: T) => boolean;
 
@@ -520,17 +427,14 @@ export class QueryBuilder<T = unknown> {
         
         this.ensureData();
 
-        // 1. Fetch target data
         const targetCollection = (this.db as any).native.get(config.to);
         const targetItems: any[] = Array.isArray(targetCollection) 
             ? targetCollection 
             : Object.values(targetCollection ?? {});
             
-        // 2. Build Lookup Map (Hash Join) - O(M)
         const lookup = new Map<string, any[]>();
         for (const item of targetItems) {
             const rawKey = item[config.foreignField];
-            // FIX: Skip if key is null/undefined to avoid "undefined" == "undefined" matches
             if (rawKey === undefined || rawKey === null) continue;
             
             const key = String(rawKey);
@@ -540,15 +444,12 @@ export class QueryBuilder<T = unknown> {
             lookup.get(key)!.push(item);
         }
         
-        // 3. Normalize current items to array
         const currentItems: T[] = Array.isArray(this.items)
             ? this.items
             : Object.values(this.items as Record<string, T>);
 
-        // 4. Perform Join - O(N)
         this.items = currentItems.map(item => {
             const rawKey = (item as any)[config.localField];
-            // FIX: Handle missing keys safely
             const key = (rawKey === undefined || rawKey === null) ? null : String(rawKey);
             
             const matches = (key !== null) ? (lookup.get(key) || []) : [];
@@ -557,7 +458,7 @@ export class QueryBuilder<T = unknown> {
                 ...item,
                 [config.as]: matches
             };
-        }) as any; // Type assertion needed because we are mutating T to T & Joined
+        }) as any;
         
         return this as any;
     }
@@ -591,9 +492,7 @@ export class QueryBuilder<T = unknown> {
         return this;
     }
 
-    // Aggregation methods — use native engine when possible
     count(): number {
-        // Fast path: use native aggregate if we have queryFilters and no JS closures
         if (this.db && this.items === null && this.queryFilters.length > 0 && this.filters.length === 0) {
             try {
                 const result = JSON.parse((this.db as any).native.executeAggregateFast(
@@ -603,7 +502,7 @@ export class QueryBuilder<T = unknown> {
                     null
                 ));
                 if (typeof result === 'number') return result;
-            } catch { /* fallback to JS */ }
+            } catch { }
         }
         return this.applyFilters().length;
     }
@@ -618,7 +517,7 @@ export class QueryBuilder<T = unknown> {
                     field
                 ));
                 if (typeof result === 'number') return result;
-            } catch { /* fallback to JS */ }
+            } catch { }
         }
         return this.applyFilters().reduce((acc, item) => {
             const value = this.getFieldValue(item, field);
@@ -636,7 +535,7 @@ export class QueryBuilder<T = unknown> {
                     field
                 ));
                 if (typeof result === 'number') return result;
-            } catch { /* fallback to JS */ }
+            } catch { }
         }
         const items = this.applyFilters();
         if (items.length === 0) return 0;
@@ -653,7 +552,7 @@ export class QueryBuilder<T = unknown> {
                     field
                 ));
                 if (typeof result === 'number') return result;
-            } catch { /* fallback to JS */ }
+            } catch { }
         }
         const items = this.applyFilters();
         if (items.length === 0) return undefined;
@@ -673,7 +572,7 @@ export class QueryBuilder<T = unknown> {
                     field
                 ));
                 if (typeof result === 'number') return result;
-            } catch { /* fallback to JS */ }
+            } catch { }
         }
         const items = this.applyFilters();
         if (items.length === 0) return undefined;
@@ -727,9 +626,7 @@ export class QueryBuilder<T = unknown> {
 private applyFilters(limit?: number): T[] {
         this.ensureData();
 
-        // 1. Handle Arrays
         if (Array.isArray(this.items)) {
-            // Optimization: if no filters & no limit, return copy of original
             if (this.filters.length === 0 && limit === undefined) {
                  return [...this.items];
             }
@@ -753,7 +650,6 @@ private applyFilters(limit?: number): T[] {
             return result;
         }
 
-        // 2. Handle Records (Object maps)
         const items = this.items as Record<string, T>;
         if (this.filters.length === 0 && limit === undefined) {
             return Object.values(items);
@@ -788,7 +684,6 @@ private applyFilters(limit?: number): T[] {
         let usedIndex = false;
         let usedNativeEngine = false;
 
-        // ===== STRATEGY 1: Index Lookup (fastest for eq/range on indexed fields) =====
         if (this.db && this.queryFilters.length > 0) {
             for (const f of this.queryFilters) {
                 if (f.op === 'eq') {
@@ -816,7 +711,6 @@ private applyFilters(limit?: number): T[] {
                             const indexedItems = await this.db.getMany<T>(paths);
                             result = indexedItems.filter((x): x is T => x !== null && x !== undefined);
                             usedIndex = true;
-                            // We break here. Note that JS filters will still apply strictness (gt vs gte)
                             break;
                         }
                     }
@@ -824,16 +718,11 @@ private applyFilters(limit?: number): T[] {
             }
         }
 
-        // ===== STRATEGY 2: Native Rust Query Engine (entire pipeline in Rust) =====
         if (!usedIndex && this.items === null && this.db) {
-            // Check if we can use full native pipeline (no custom JS closures)
             const hasCustomJSFilters = this.filters.length > this.queryFilters.length;
-            // If only queryFilters exist (from where().eq(), etc.), do everything in Rust
             if (this.queryFilters.length > 0 && !hasCustomJSFilters) {
                 try {
                     const sortJson = this._sortOptions ? JSON.stringify(this._sortOptions) : null;
-                    // Use fast string path — returns JSON string instead of N-API Value
-                    // JSON.parse() is ~10x faster than N-API's recursive Value→JS conversion
                     const jsonStr = (this.db as any).native.executeQueryFast(
                         this.path,
                         JSON.stringify(this.queryFilters),
@@ -848,16 +737,13 @@ private applyFilters(limit?: number): T[] {
                         usedNativeEngine = true;
                     }
                 } catch {
-                    // Fallback to JS-based query if native engine fails
                     usedNativeEngine = false;
                 }
             }
             
-            // Partial native: use Rust for filtering, JS for post-processing
             if (!usedNativeEngine && this.queryFilters.length > 0) {
                 result = await this.db.parallelQuery<T>(this.path, this.queryFilters);
 
-                // Apply custom JS filters (closures added via .filter())
                 if (this.filters.length > 0) {
                     for (const filter of this.filters) {
                         result = result.filter(filter);
@@ -866,7 +752,6 @@ private applyFilters(limit?: number): T[] {
             }
         }
 
-        // ===== STRATEGY 3: Full JS Fallback =====
         if (!usedIndex && !usedNativeEngine && result.length === 0) {
             this.ensureData();
             let effectiveLimit: number | undefined;
@@ -876,13 +761,10 @@ private applyFilters(limit?: number): T[] {
             result = this.applyFilters(effectiveLimit);
         }
 
-        // ===== Post-processing (only needed for Strategy 2 partial native & Strategy 3) =====
         let finalResult: T[];
         if (usedNativeEngine) {
-            // Native engine already handled sort/skip/limit/select
             finalResult = result;
         } else if (usedIndex) {
-            // Apply remaining JS filters after index lookup
             for (const filter of this.filters) {
                 result = result.filter(filter);
             }
@@ -893,7 +775,6 @@ private applyFilters(limit?: number): T[] {
 
         const duration = performance.now() - startTime;
         
-        // Slow query detection
         const threshold = (this.db as any).slowQueryThresholdMs ?? 100;
         if (duration > threshold) {
             this.db.emit('slow_query', {
@@ -909,7 +790,6 @@ private applyFilters(limit?: number): T[] {
     }
 
     private applyPostProcessing(result: T[]): T[] {
-        // Sort
         if (this._sortOptions) {
             const sortEntries = Object.entries(this._sortOptions);
             result.sort((a, b) => {
@@ -926,17 +806,14 @@ private applyFilters(limit?: number): T[] {
             });
         }
 
-        // Skip
         if (this._skip !== undefined) {
             result = result.slice(this._skip);
         }
 
-        // Limit
         if (this._limit !== undefined) {
             result = result.slice(0, this._limit);
         }
 
-        // Select
         if (this._selectFields) {
             result = result.map(item => {
                 const newItem: Record<string, unknown> = {};
@@ -951,14 +828,12 @@ private applyFilters(limit?: number): T[] {
     }
 
     first(): T | undefined {
-        // If we are sorting, we MUST get all items first to sort them correctly
         if (this._sortOptions) {
             let items = this.applyFilters(); 
             items = this.applyPostProcessing(items);
             return items[0];
         }
         
-        // Optimization: If NOT sorting, we can just grab the first one directly!
         const items = this.applyFilters(1);
         return items[0];
     }
@@ -970,10 +845,6 @@ private applyFilters(limit?: number): T[] {
     }
 }
 
-// ============================================
-// MAIN DATABASE CLASS
-// ============================================
-
 export class JSONDatabase extends EventEmitter {
     private native: InstanceType<typeof NativeDb>;
     private indices: IndexConfig[] = [];
@@ -984,14 +855,11 @@ export class JSONDatabase extends EventEmitter {
     private autoSaveInterval: number;
     private encryptionKey?: string;
     
-    // TTL Management
     private ttlMap: Map<string, NodeJS.Timeout> = new Map();
-    private ttlEntries: Map<string, number> = new Map(); // path -> expiresAt timestamp
+    private ttlEntries: Map<string, number> = new Map();
     
-    // Subscriptions (Pub/Sub)
     private subscriptions: Map<string, Set<(value: unknown, oldValue: unknown) => void>> = new Map();
 
-    // v4.5: New options
     private lockMode: 'exclusive' | 'shared' | 'none';
     private durability: 'none' | 'lazy' | 'batched' | 'sync';
     private walBatchSize: number;
@@ -1009,14 +877,12 @@ export class JSONDatabase extends EventEmitter {
         this.encryptionKey = options.encryptionKey;
         this.autoSaveInterval = options.autoSaveInterval ?? 1000;
         
-        // v4.5: Initialize new options
         this.lockMode = options.lockMode ?? (this.wal ? 'exclusive' : 'none');
         this.durability = options.durability ?? (this.wal ? 'batched' : 'none');
         this.walBatchSize = options.walBatchSize ?? 1000;
         this.walFlushMs = options.walFlushMs ?? 10;
         this.slowQueryThresholdMs = options.slowQueryThresholdMs ?? 100;
         
-        // v4.5: Use new constructor with options if available
         if (typeof (NativeDb as any).newWithOptions === 'function') {
             this.native = (NativeDb as any).newWithOptions(
                 filePath,
@@ -1026,7 +892,6 @@ export class JSONDatabase extends EventEmitter {
                 this.walFlushMs
             );
         } else {
-            // Fallback to legacy constructor
             this.native = new NativeDb(filePath, this.wal);
         }
         
@@ -1051,7 +916,6 @@ export class JSONDatabase extends EventEmitter {
             }
         }
 
-        // v5.5: Configure memory management
         if (options.memoryLimit && typeof this.native.configureMemory === 'function') {
             this.native.configureMemory(
                 options.memoryLimit,
@@ -1061,7 +925,6 @@ export class JSONDatabase extends EventEmitter {
             );
         }
         
-        // Cleanup on process exit
         process.on('beforeExit', () => this.close());
     }
 
@@ -1070,27 +933,20 @@ export class JSONDatabase extends EventEmitter {
             try {
                 const encrypted = readFileSync(this.filePath, 'utf8');
                 const decrypted = decrypt(encrypted, this.encryptionKey);
-                // Write decrypted temporarily for native to load
                 const tempPath = `${this.filePath}.tmp`;
                 writeFileSync(tempPath, decrypted);
 
-                // Re-initialize native DB
                 if (this.native && typeof this.native.close === 'function') {
                     this.native.close();
                 }
                 this.native = new NativeDb(tempPath, this.wal);
                 this.native.load();
 
-                // Clean up temp file
-                try { require('fs').unlinkSync(tempPath); } catch { /* ignore */ }
+                try { require('fs').unlinkSync(tempPath); } catch { }
             } catch (err) {
-                // If decryption fails, might be first run or corrupted
                 this.native.load();
             }
         } else if (forceReload) {
-            // Only re-create the native instance when explicitly requested
-            // (e.g., from restoreSnapshot). During initial construction,
-            // the native instance is already properly created by the constructor.
 
             if (this.native && typeof this.native.close === 'function') {
                 this.native.close();
@@ -1112,14 +968,11 @@ export class JSONDatabase extends EventEmitter {
 
     private triggerSave(): void {
         if (this.wal) {
-            // WAL mode: immediate writes are appended to WAL by Rust.
-            // Periodic checkpoint to consolidate
             if (this.saveTimeout) clearTimeout(this.saveTimeout);
             this.saveTimeout = setTimeout(() => {
                 this.saveInternal();
-            }, this.autoSaveInterval * 5); // Less frequent checkpoints in WAL mode
+            }, this.autoSaveInterval * 5);
         } else {
-            // In-Memory mode: Debounce save
             if (this.saveTimeout) clearTimeout(this.saveTimeout);
             this.saveTimeout = setTimeout(() => {
                 this.saveInternal();
@@ -1129,7 +982,6 @@ export class JSONDatabase extends EventEmitter {
 
     private saveInternal(): void {
         if (this.encryptionKey) {
-            // Get data, encrypt, and write
             const data = this.native.get('');
             const jsonStr = JSON.stringify(data, null, 2);
             const encrypted = encrypt(jsonStr, this.encryptionKey);
@@ -1139,9 +991,6 @@ export class JSONDatabase extends EventEmitter {
         }
     }
 
-    /**
-     * Force save to disk immediately
-     */
     public async save(): Promise<void> {
         if (this.saveTimeout) {
             clearTimeout(this.saveTimeout);
@@ -1150,27 +999,12 @@ export class JSONDatabase extends EventEmitter {
         this.saveInternal();
     }
 
-    /**
-     * v4.5: Explicit sync for durability
-     * 
-     * Ensures all pending writes are flushed to the WAL and fsynced.
-     * Use this when you need guaranteed durability before continuing.
-     * 
-     * @example
-     * await db.set('critical.data', value);
-     * await db.sync(); // Guaranteed durable
-     */
     public async sync(): Promise<void> {
         if (typeof this.native.sync === 'function') {
             await this.native.sync();
         }
     }
 
-    /**
-     * v4.5: Get WAL status
-     * 
-     * Returns information about the Write-Ahead Log state.
-     */
     public walStatus(): { enabled: boolean; committedLsn?: number } {
         if (typeof this.native.walStatus === 'function') {
             return this.native.walStatus();
@@ -1178,26 +1012,19 @@ export class JSONDatabase extends EventEmitter {
         return { enabled: this.wal };
     }
 
-    /**
-     * Close the database gracefully
-     */
     public async close(): Promise<void> {
         if (!this.native) return;
         
-        // Clear all TTL timers
         for (const timeout of this.ttlMap.values()) {
             clearTimeout(timeout);
         }
         this.ttlMap.clear();
         
-        // Force save
         await this.save();
         
-        // Clear subscriptions
         this.subscriptions.clear();
         this.removeAllListeners();
         
-        // v4.5: Release native resources (locks, WAL handles)
         if (this.native && typeof this.native.close === 'function') {
             this.native.close();
         }
@@ -1220,20 +1047,12 @@ export class JSONDatabase extends EventEmitter {
         }
     }
     
-    // Legacy method name kept for internal compatibility references, replaced implementation
     private rebuildIndices(): void {
         for (const idx of this.indices) {
             this.rebuildIndexByName(idx);
         }
     }
 
-    /**
-     * Incrementally update indices for a single path change
-     * Much faster than full rebuild for single-item operations
-     */
-    /**
-     * Incrementally update indices for a single path change
-     */
     private updateIndicesForPath(path: string, value: unknown, isDelete: boolean = false): void {
         if (this.indices.length === 0) return;
         if (typeof this.native.updateIndex !== 'function') return;
@@ -1244,7 +1063,6 @@ export class JSONDatabase extends EventEmitter {
         const collectionPath = parts.slice(0, -1).join('.');
         
         for (const idx of this.indices) {
-            // Check if path matches collection (e.g. users.123 updates index on users)
             if (collectionPath === idx.path) {
                 if (isDelete) {
                     if (value && typeof value === 'object') {
@@ -1262,10 +1080,6 @@ export class JSONDatabase extends EventEmitter {
             }
         }
     }
-    
-    // ============================================
-    // MIDDLEWARE
-    // ============================================
     
     public before<T = unknown>(method: string, pathPattern: string, fn: MiddlewareFn<T>): void {
         const key = `${method}:${pathPattern}`;
@@ -1306,16 +1120,6 @@ export class JSONDatabase extends EventEmitter {
         return value;
     }
 
-    // ============================================
-    // PUB/SUB (Subscriptions)
-    // ============================================
-
-    /**
-     * Subscribe to changes on a path pattern
-     * @param pathPattern - Path pattern with optional wildcards (* for single segment, ** for multiple)
-     * @param callback - Function called when value changes
-     * @returns Unsubscribe function
-     */
     public subscribe(
         pathPattern: string, 
         callback: (value: unknown, oldValue: unknown) => void
@@ -1349,27 +1153,15 @@ export class JSONDatabase extends EventEmitter {
             }
         }
         
-        // Also emit generic events
         this.emit('change', { path, value: newValue, oldValue });
     }
 
-    // ============================================
-    // TTL (Time to Live)
-    // ============================================
-
-    /**
-     * Set a key with TTL (expires after specified seconds)
-     */
     public async setWithTTL(path: string, value: unknown, ttlSeconds: number): Promise<void> {
         await this.set(path, value);
         this.setTTL(path, ttlSeconds);
     }
 
-    /**
-     * Set TTL on an existing key
-     */
     public setTTL(path: string, ttlSeconds: number): void {
-        // Clear existing TTL if any
         this.clearTTL(path);
         
         const expiresAt = Date.now() + ttlSeconds * 1000;
@@ -1385,9 +1177,6 @@ export class JSONDatabase extends EventEmitter {
         this.ttlMap.set(path, timeout);
     }
 
-    /**
-     * Get remaining TTL for a key in seconds (returns -1 if no TTL, -2 if key doesn't exist)
-     */
     public async getTTL(path: string): Promise<number> {
         if (!(await this.has(path))) return -2;
         const expiresAt = this.ttlEntries.get(path);
@@ -1395,9 +1184,6 @@ export class JSONDatabase extends EventEmitter {
         return Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
     }
 
-    /**
-     * Remove TTL from a key (make it persistent)
-     */
     public clearTTL(path: string): void {
         const timeout = this.ttlMap.get(path);
         if (timeout) {
@@ -1407,21 +1193,13 @@ export class JSONDatabase extends EventEmitter {
         this.ttlEntries.delete(path);
     }
 
-    /**
-     * Check if a key has TTL set
-     */
     public hasTTL(path: string): boolean {
         return this.ttlEntries.has(path);
     }
 
-    // ============================================
-    // CORE API
-    // ============================================
-
     public async get<T = unknown>(path: string, defaultValue: T | null = null): Promise<T> {
         let val = this.native.get(path);
         
-        // Automatic cold storage restoration
         if (this.isColdPointer(val)) {
             const restored = this.native.restore(path);
             if (restored) {
@@ -1435,20 +1213,14 @@ export class JSONDatabase extends EventEmitter {
     public async getMany<T = unknown>(paths: string[]): Promise<(T | null)[]> {
         if (typeof this.native.getMany === 'function') {
             const results = this.native.getMany(paths);
-            // Note: Does not currently handle cold storage restoration for batch get
             return results as (T | null)[];
         }
         return Promise.all(paths.map(p => this.get<T>(p)));
     }
 
-    /**
-     * Synchronous get for internal use by QueryBuilder
-     * @internal
-     */
     public getSync<T = unknown>(path: string, defaultValue: T | null = null): T {
         let val = this.native.get(path);
         
-        // Automatic cold storage restoration (Sync)
         if (this.isColdPointer(val)) {
             const restored = this.native.restore(path);
             if (restored) {
@@ -1460,12 +1232,10 @@ export class JSONDatabase extends EventEmitter {
     }
 
     public async set(path: string, value: unknown): Promise<void> {
-        // Run validation (if native module supports it)
         if (typeof this.native.validatePath === 'function') {
             this.native.validatePath(path, value);
         }
         
-        // Optimally only fetch oldValue if needed (subscribers or indices)
         const needsFetch = this.subscriptions.size > 0 || this.listenerCount('change') > 0 || this.indices.length > 0;
         const oldValue = needsFetch ? this.native.get(path) : undefined;
         
@@ -1484,32 +1254,14 @@ export class JSONDatabase extends EventEmitter {
         return this.native.has(path);
     }
 
-    /**
-     * Offload a specific path to disk to save memory.
-     * Replaces the data with a small pointer marker.
-     * Automatically restored on access via get().
-     * @returns ID of the cold storage file, or empty string if failed/empty
-     */
     public async offload(path: string): Promise<string> {
         return this.native.offload(path);
     }
 
-    /**
-     * Manually restore offloaded data.
-     * @returns true if restored, false if not found or not cold
-     */
     public async restore(path: string): Promise<boolean> {
         return this.native.restore(path);
     }
 
-    // ============================================
-    // v5.5: MEMORY MANAGEMENT
-    // ============================================
-
-    /**
-     * Get memory usage statistics.
-     * Returns total estimated bytes, max memory, cold/hot key counts, and utilization.
-     */
     public async memoryStats(): Promise<{
         totalEstimatedBytes: number;
         maxMemoryBytes: number;
@@ -1523,10 +1275,6 @@ export class JSONDatabase extends EventEmitter {
         return { totalEstimatedBytes: 0, maxMemoryBytes: 0, coldKeysCount: 0, hotKeysCount: 0, utilizationPct: 0 };
     }
 
-    /**
-     * Manually trigger memory pressure check.
-     * Returns list of keys that were evicted to cold storage.
-     */
     public async checkMemoryPressure(): Promise<string[]> {
         if (typeof this.native.checkMemoryPressure === 'function') {
             return this.native.checkMemoryPressure();
@@ -1558,12 +1306,10 @@ export class JSONDatabase extends EventEmitter {
         const needsFetch = this.subscriptions.size > 0 || this.listenerCount('change') > 0;
         const oldValue = needsFetch ? this.native.get(path) : undefined;
         
-        // v5.5: Use native pushBatch for multi-item push (single lock, HashSet dedup)
         if (items.length > 1 && typeof this.native.pushBatch === 'function') {
             try {
                 this.native.pushBatch(path, items);
             } catch {
-                // Fallback to one-by-one push
                 for (const item of items) {
                     this.native.push(path, item);
                 }
@@ -1583,7 +1329,6 @@ export class JSONDatabase extends EventEmitter {
     }
 
     public async pull(path: string, ...items: unknown[]): Promise<void> {
-        // v5.5: Use native pullItems for O(N) single-pass removal with HashSet
         if (typeof this.native.pullItems === 'function') {
             try {
                 const needsFetch = this.subscriptions.size > 0 || this.listenerCount('change') > 0;
@@ -1598,11 +1343,9 @@ export class JSONDatabase extends EventEmitter {
                 }
                 return;
             } catch {
-                // Fallback to JS-based pull
             }
         }
         
-        // JS fallback
         const arr = await this.get<unknown[]>(path);
         if (Array.isArray(arr)) {
             const newArr = arr.filter(x => !items.some(i => deepEqual(x, i)));
@@ -1624,33 +1367,20 @@ export class JSONDatabase extends EventEmitter {
         return this.add(path, -amount);
     }
 
-    // ============================================
-    // INDEXING
-    // ============================================
-    
     public async findByIndex<T = unknown>(indexName: string, value: unknown): Promise<T | null> {
         if (typeof this.native.findIndexPaths !== 'function') return null;
         const paths = this.native.findIndexPaths(indexName, value);
         if (paths && paths.length > 0) {
-            // Return first match for compatibility
             return this.get<T>(paths[0]);
         }
         return null;
     }
 
-    /**
-     * Manually trigger index rebuild
-     */
     public rebuildIndex(): void {
         this.rebuildIndices();
     }
 
-    // ============================================
-    // QUERY
-    // ============================================
-
     public query<T = unknown>(path: string): QueryBuilder<T> {
-        // Optimization: Lazy load data only when needed
         return new QueryBuilder<T>(null, this).setPath(path);
     }
 
@@ -1736,10 +1466,6 @@ export class JSONDatabase extends EventEmitter {
         };
     }
 
-    // ============================================
-    // BATCH OPERATIONS
-    // ============================================
-
     public async batch(ops: BatchOperation[]): Promise<void> {
         for (const op of ops) {
             switch (op.type) {
@@ -1774,26 +1500,14 @@ export class JSONDatabase extends EventEmitter {
         this.emit('batch', { operations: ops });
     }
 
-    // ============================================
-    // TRANSACTIONS
-    // ============================================
-
     private inTransaction = false;
 
-    /**
-     * Execute a function within a transaction.
-     * Supports nested transactions using savepoints.
-     * All operations (set, delete, etc.) called on this DB instance within the 
-     * transaction function will be atomic.
-     */
     public async transaction<T = unknown>(
         fn: (tx: Transaction) => Promise<T> | T
     ): Promise<T> {
-        // Check if native module supports transactions
         const hasNativeTransactions = typeof this.native.beginTransaction === 'function';
         
         if (this.inTransaction) {
-            // Nested transaction: use a savepoint
             const savepointName = `nested_${Math.random().toString(36).slice(2, 9)}`;
             if (hasNativeTransactions) {
                 this.native.createSavepoint(savepointName);
@@ -1840,10 +1554,6 @@ export class JSONDatabase extends EventEmitter {
         }
     }
 
-    // ============================================
-    // SNAPSHOTS
-    // ============================================
-
     public async createSnapshot(name: string): Promise<string> {
         await this.save();
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -1863,13 +1573,6 @@ export class JSONDatabase extends EventEmitter {
         this.emit('snapshot:restored', { path: snapshotPath });
     }
 
-    // ============================================
-    // UTILITY METHODS
-    // ============================================
-
-    /**
-     * Get all keys under a path
-     */
     public async keys(path: string = ''): Promise<string[]> {
         const data = await this.get<unknown>(path);
         if (typeof data === 'object' && data !== null) {
@@ -1878,9 +1581,6 @@ export class JSONDatabase extends EventEmitter {
         return [];
     }
 
-    /**
-     * Get all values under a path
-     */
     public async values<T = unknown>(path: string = ''): Promise<T[]> {
         const data = await this.get<unknown>(path);
         if (typeof data === 'object' && data !== null) {
@@ -1889,9 +1589,6 @@ export class JSONDatabase extends EventEmitter {
         return [];
     }
 
-    /**
-     * Get count of items under a path
-     */
     public async count(path: string = ''): Promise<number> {
         const data = await this.get<unknown>(path);
         if (Array.isArray(data)) {
@@ -1902,16 +1599,10 @@ export class JSONDatabase extends EventEmitter {
         return 0;
     }
 
-    /**
-     * Clear all data
-     */
     public async clear(): Promise<void> {
         await this.set('', {});
     }
 
-    /**
-     * Get database statistics
-     */
     public async stats(): Promise<{
         size: number;
         keys: number;
@@ -1932,14 +1623,6 @@ export class JSONDatabase extends EventEmitter {
         };
     }
 
-    // ============================================
-    // PARALLEL PROCESSING
-    // ============================================
-
-    /**
-     * Get system resource information for parallel processing decisions
-     * Returns info about available cores and whether parallel mode is enabled
-     */
     public getSystemInfo(): SystemInfo {
         const nativeInfo = this.native.getSystemInfo();
         return {
@@ -1949,36 +1632,15 @@ export class JSONDatabase extends EventEmitter {
         };
     }
 
-    /**
-     * Execute batch set operations with automatic parallel optimization.
-     * Uses multiple CPU cores when workload is large enough (≥100 items).
-     * Falls back to sequential processing for small batches to avoid overhead.
-     * 
-     * @param operations - Array of {path, value} objects to set
-     * @returns ParallelResult with success status and count of operations completed
-     * 
-     * @example
-     * ```typescript
-     * const result = await db.batchSetParallel([
-     *     { path: 'users.1', value: { name: 'Alice' } },
-     *     { path: 'users.2', value: { name: 'Bob' } },
-     *     // ... potentially thousands more
-     * ]);
-     * console.log(`Completed ${result.count} operations`);
-     * ```
-     */
     public async batchSetParallel(
         operations: Array<{ path: string; value: unknown }>
     ): Promise<ParallelResult> {
-        // Convert to tuple array for native call
         const tuples: Array<[string, unknown]> = operations.map(op => [op.path, op.value]);
         
         const result = this.native.batchSetParallel(tuples);
         
-        // Trigger save after batch
         this.triggerSave();
         
-        // Emit batch event
         this.emit('batch', { 
             operations: operations.map(op => ({ type: 'set', path: op.path, value: op.value }))
         });
@@ -1990,58 +1652,22 @@ export class JSONDatabase extends EventEmitter {
         };
     }
 
-    /**
-     * Execute parallel query with native Rust filtering.
-     * More efficient than JS-based queries for large datasets (≥100 items).
-     * Automatically uses parallel iteration when beneficial.
-     * 
-     * @param path - Path to the collection to query
-     * @param filters - Array of filter conditions to apply
-     * @returns Filtered results array
-     * 
-     * @example
-     * ```typescript
-     * const adults = await db.parallelQuery('users', [
-     *     { field: 'age', op: 'gte', value: 18 },
-     *     { field: 'status', op: 'eq', value: 'active' }
-     * ]);
-     * ```
-     */
-    /**
-     * Execute parallel query with native Rust filtering.
-     * More efficient than JS-based queries for large datasets (≥100 items).
-     * Automatically uses parallel iteration when beneficial.
-     * 
-     * @param path - Path to the collection to query
-     * @param filters - Array of filter conditions to apply
-     * @returns Filtered results array
-     * 
-     * @example
-     * ```typescript
-     * const adults = await db.parallelQuery('users', [
-     *     { field: 'age', op: 'gte', value: 18 },
-     *     { field: 'status', op: 'eq', value: 'active' }
-     * ]);
-     * ```
-     */
     public async parallelQuery<T = unknown>(
         path: string, 
         filters: QueryFilter[]
     ): Promise<T[]> {
-        // v5.5: Use fast string path to avoid N-API object creation overhead
         if (typeof this.native.executeQueryFast === 'function') {
             try {
                 const jsonStr = this.native.executeQueryFast(
                     path,
                     JSON.stringify(filters),
-                    null, // sort
-                    null, // limit
-                    null, // skip
-                    null  // select
+                    null,
+                    null,
+                    null,
+                    null
                 );
                 return JSON.parse(jsonStr) as T[];
             } catch (e) {
-                // Fallback if parsing fails
             }
         }
         
@@ -2049,40 +1675,22 @@ export class JSONDatabase extends EventEmitter {
         return result as T[];
     }
 
-    /**
-     * Parallel aggregation operations using native Rust processing.
-     * Efficiently computes sum, avg, min, max, or count over large datasets.
-     * 
-     * @param path - Path to the collection
-     * @param operation - Aggregation type: 'sum', 'avg', 'min', 'max', or 'count'
-     * @param field - Optional field to aggregate (required for sum, avg, min, max)
-     * @returns Aggregation result or null if no data
-     * 
-     * @example
-     * ```typescript
-     * const totalSales = await db.parallelAggregate('orders', 'sum', 'amount');
-     * const avgAge = await db.parallelAggregate('users', 'avg', 'age');
-     * const userCount = await db.parallelAggregate('users', 'count');
-     * ```
-     */
     public async parallelAggregate(
         path: string,
         operation: 'sum' | 'avg' | 'min' | 'max' | 'count',
         field?: string
     ): Promise<number | null> {
-        // v5.5: Use fast string path
         if (typeof this.native.executeAggregateFast === 'function') {
             try {
                 const jsonStr = this.native.executeAggregateFast(
                     path,
-                    JSON.stringify([]), // No filters (parallelAggregate API doesn't take filters explicitly)
+                    JSON.stringify([]),
                     operation,
                     field
                 );
                 const result = JSON.parse(jsonStr);
                 return result === null || result === undefined ? null : result;
             } catch {
-                // Fallback
             }
         }
 
@@ -2090,16 +1698,6 @@ export class JSONDatabase extends EventEmitter {
         return result === null || result === undefined ? null : result;
     }
 
-    /**
-     * Perform a parallel left outer join (lookup) between two collections using Rust.
-     * efficient for large datasets as it avoids passing data through JS.
-     * 
-     * @param leftPath - Path to the source collection
-     * @param rightPath - Path to the target collection
-     * @param leftField - Field in source collection
-     * @param rightField - Field in target collection
-     * @param asField - Name of the field to store matches
-     */
     public async parallelLookup(
         leftPath: string,
         rightPath: string,
@@ -2115,5 +1713,4 @@ export class JSONDatabase extends EventEmitter {
     }
 }
 
-// Default export
 export default JSONDatabase;

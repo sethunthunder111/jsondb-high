@@ -20,14 +20,12 @@ use std::time::{Duration, Instant};
 use std::io;
 use rayon::prelude::*;
 
-/// WAL operation types
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum WalOpType {
     Set,
     Delete,
 }
 
-/// Single WAL operation
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WalOp {
     pub timestamp: u64,
@@ -36,7 +34,6 @@ pub struct WalOp {
     pub value: Option<Value>,
 }
 
-/// WAL command types for channel
 pub enum WalCmd {
     Write { lsn: u64, op: WalOp },
     Sync { tx: std::sync::mpsc::Sender<()> },
@@ -44,18 +41,12 @@ pub enum WalCmd {
     Shutdown,
 }
 
-/// Maximum allowed size for a single WAL entry (128 MB)
-/// This prevents OOM attacks from malicious/corrupted WAL files
 const MAX_WAL_ENTRY_SIZE: u32 = 128 * 1024 * 1024;
 
-/// WAL configuration
 #[derive(Clone, Copy)]
 pub struct WalConfig {
-    /// Maximum operations to batch
     pub batch_size: usize,
-    /// Maximum time to wait before flush
     pub flush_interval_ms: u64,
-    /// Whether to fsync (false = group write, true = group commit)
     pub fsync: bool,
 }
 
@@ -69,7 +60,6 @@ impl Default for WalConfig {
     }
 }
 
-/// Group Commit WAL implementation
 pub struct GroupCommitWAL {
     cmd_tx: Sender<WalCmd>,
     committed_lsn: Arc<AtomicU64>,
@@ -77,7 +67,6 @@ pub struct GroupCommitWAL {
 }
 
 impl GroupCommitWAL {
-    /// Create new WAL with background commit thread
     pub fn new(wal_path: &str, config: WalConfig) -> io::Result<Self> {
         let (cmd_tx, cmd_rx) = bounded(100000);
         let committed_lsn = Arc::new(AtomicU64::new(0));
@@ -98,7 +87,6 @@ impl GroupCommitWAL {
         })
     }
     
-    /// Append operation to WAL (non-blocking)
     pub fn append(&self, op: WalOp) -> io::Result<u64> {
         let lsn = self._next_lsn.fetch_add(1, Ordering::SeqCst);
         
@@ -108,7 +96,6 @@ impl GroupCommitWAL {
         Ok(lsn)
     }
     
-    /// Wait for all operations up to current point to be committed
     pub fn sync(&self) -> io::Result<()> {
         let (tx, rx) = std::sync::mpsc::channel();
         self.cmd_tx.send(WalCmd::Sync { tx })
@@ -120,19 +107,16 @@ impl GroupCommitWAL {
         Ok(())
     }
     
-    /// Get last committed LSN
     pub fn committed_lsn(&self) -> u64 {
         self.committed_lsn.load(Ordering::Acquire)
     }
     
     #[allow(dead_code)]
-    /// Shutdown WAL thread
     pub fn shutdown(&self) -> io::Result<()> {
         let _ = self.cmd_tx.send(WalCmd::Shutdown);
         Ok(())
     }
     
-    /// Background commit thread
     fn commit_thread(
         wal_path: String,
         rx: Receiver<WalCmd>,
@@ -161,14 +145,12 @@ impl GroupCommitWAL {
             let deadline = last_flush + Duration::from_millis(config.flush_interval_ms);
             let timeout = deadline.saturating_duration_since(Instant::now());
             
-            // Collect batch
             while batch.len() < config.batch_size {
                 match rx.recv_timeout(timeout) {
                     Ok(WalCmd::Write { lsn, op }) => {
                         batch.push((lsn, op));
                     }
                     Ok(WalCmd::Sync { tx }) => {
-                        // Flush immediately and signal completion
                         if !batch.is_empty() {
                             Self::flush_batch(&mut writer, &batch, &committed_lsn, config.fsync);
                             batch.clear();
@@ -177,18 +159,15 @@ impl GroupCommitWAL {
                         let _ = tx.send(());
                     }
                     Ok(WalCmd::Shutdown) => {
-                        // Final flush and exit
                         if !batch.is_empty() {
                             Self::flush_batch(&mut writer, &batch, &committed_lsn, true);
                         }
                         return;
                     }
                     Err(RecvTimeoutError::Timeout) => {
-                        // Deadline reached
                         break;
                     }
                     Err(RecvTimeoutError::Disconnected) => {
-                        // Channel closed, flush remaining and exit
                         if !batch.is_empty() {
                             Self::flush_batch(&mut writer, &batch, &committed_lsn, true);
                         }
@@ -197,7 +176,6 @@ impl GroupCommitWAL {
                 }
             }
             
-            // Flush batch if we have any operations
             if !batch.is_empty() {
                 Self::flush_batch(&mut writer, &batch, &committed_lsn, config.fsync);
                 batch.clear();
@@ -206,7 +184,6 @@ impl GroupCommitWAL {
         }
     }
     
-    /// Flush a batch of operations to disk
     fn flush_batch(
         writer: &mut BufWriter<File>,
         batch: &[(u64, WalOp)],
@@ -216,8 +193,6 @@ impl GroupCommitWAL {
         let mut buf = Vec::with_capacity(batch.len() * 256);
         let mut max_lsn = 0u64;
 
-        // Parallel serialization and CRC calculation
-        // We only parallelize if batch size is large enough to justify overhead
         if batch.len() >= 500 {
             let serialized: Vec<Option<(u64, u32, Vec<u8>)>> = batch
                 .par_iter()
@@ -232,7 +207,6 @@ impl GroupCommitWAL {
 
             for item in serialized {
                 if let Some((lsn, crc, data)) = item {
-                    // Write: [LSN:8][CRC:4][LEN:4][DATA]
                     buf.extend_from_slice(&lsn.to_le_bytes());
                     buf.extend_from_slice(&crc.to_le_bytes());
                     buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
@@ -242,7 +216,6 @@ impl GroupCommitWAL {
                 }
             }
         } else {
-            // Sequential fallback (avoids intermediate allocation overhead)
             for (lsn, op) in batch {
                 let data = match serde_json::to_vec(op) {
                     Ok(d) => d,
@@ -251,7 +224,6 @@ impl GroupCommitWAL {
 
                 let crc = crc32fast::hash(&data);
 
-                // Write: [LSN:8][CRC:4][LEN:4][DATA]
                 buf.extend_from_slice(&lsn.to_le_bytes());
                 buf.extend_from_slice(&crc.to_le_bytes());
                 buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
@@ -261,13 +233,11 @@ impl GroupCommitWAL {
             }
         }
         
-        // Single write syscall
         if let Err(e) = writer.write_all(&buf) {
             eprintln!("WAL write error: {}", e);
             return;
         }
         
-        // Single fsync for entire batch (if enabled)
         if fsync {
             if let Err(e) = writer.get_ref().sync_all() {
                 eprintln!("WAL fsync error: {}", e);
@@ -275,12 +245,10 @@ impl GroupCommitWAL {
             }
         }
         
-        // Update committed LSN
         committed_lsn.store(max_lsn, Ordering::Release);
     }
 }
 
-/// Recover database state from WAL
 pub fn recover_from_wal(wal_path: &str, data: &mut Value) -> io::Result<u64> {
     if !Path::new(wal_path).exists() {
         return Ok(0);
@@ -290,10 +258,9 @@ pub fn recover_from_wal(wal_path: &str, data: &mut Value) -> io::Result<u64> {
     let mut last_valid_lsn = 0u64;
     
     loop {
-        // Read header: [LSN:8][CRC:4][LEN:4]
         let mut header = [0u8; 16];
         if file.read_exact(&mut header).is_err() {
-            break; // EOF or truncated
+            break;
         }
         
         let lsn = u64::from_le_bytes([
@@ -308,20 +275,17 @@ pub fn recover_from_wal(wal_path: &str, data: &mut Value) -> io::Result<u64> {
             break;
         }
 
-        // Read data
         let mut data_buf = vec![0u8; len as usize];
         if file.read_exact(&mut data_buf).is_err() {
             eprintln!("WAL truncated at LSN {}", lsn);
             break;
         }
         
-        // Verify CRC
         if crc32fast::hash(&data_buf) != crc {
             eprintln!("WAL corruption at LSN {}, stopping recovery", lsn);
             break;
         }
         
-        // Deserialize and apply
         match serde_json::from_slice::<WalOp>(&data_buf) {
             Ok(op) => {
                 apply_wal_op(data, &op);
@@ -337,7 +301,6 @@ pub fn recover_from_wal(wal_path: &str, data: &mut Value) -> io::Result<u64> {
     Ok(last_valid_lsn)
 }
 
-/// Apply a single WAL operation to data
 fn apply_wal_op(data: &mut Value, op: &WalOp) {
     #[allow(unused_imports)]
     use serde_json::Map;
@@ -354,7 +317,6 @@ fn apply_wal_op(data: &mut Value, op: &WalOp) {
     }
 }
 
-/// Set value at path (helper for recovery)
 fn set_value_at_path(root: &mut Value, path: &str, value: Value) {
     if path.is_empty() {
         *root = value;
@@ -368,7 +330,6 @@ fn set_value_at_path(root: &mut Value, path: &str, value: Value) {
         let is_last = i == parts.len() - 1;
 
         if is_last {
-            // Last part - set value
             match current {
                 Value::Object(map) => {
                     map.insert(part.to_string(), value);
@@ -398,7 +359,6 @@ fn set_value_at_path(root: &mut Value, path: &str, value: Value) {
             return;
         }
         
-        // Navigate/create path
         if current.is_null() {
             let is_array = part.parse::<usize>().is_ok();
             *current = if is_array { Value::Array(Vec::new()) } else { Value::Object(Map::new()) };
@@ -434,7 +394,6 @@ fn set_value_at_path(root: &mut Value, path: &str, value: Value) {
     }
 }
 
-/// Delete value at path (helper for recovery)
 fn delete_value_at_path(root: &mut Value, path: &str) {
     if path.is_empty() {
         return;
@@ -487,16 +446,11 @@ fn delete_value_at_path(root: &mut Value, path: &str) {
     }
 }
 
-/// Durability mode
 #[derive(Clone, Copy, Debug)]
 pub enum DurabilityMode {
-    /// No WAL, manual save only
     None,
-    /// Write WAL, fsync every 100ms
     Lazy,
-    /// Group commit every 10ms
     Batched,
-    /// Every write fsynced
     Sync,
 }
 
