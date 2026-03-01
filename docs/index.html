@@ -10,7 +10,7 @@
   
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js"></script>
@@ -27,6 +27,7 @@
         <a href="index.html" class="nav-link active">Home</a>
         <a href="docs.html" class="nav-link">Docs</a>
         <a href="benchmarks.html" class="nav-link">Benchmarks</a>
+        <a href="changelog.html" class="nav-link">Changelog</a>
         <a href="https://github.com/sethunthunder111/jsondb-high" class="nav-link" target="_blank">GitHub</a>
         <a href="docs.html#quick-start" class="nav-cta">Get Started</a>
       </div>
@@ -47,26 +48,25 @@
     <div class="parallax-content">
       
       <div style="z-index: 10; position: relative;">
-        <div class="hero-badge animate-scale-in">v5.5.0 HYBRID ARCHITECTURE</div>
+        <span class="label" style="color: #818cf8; border: 1px solid rgba(129,140,248,0.2); background: rgba(129,140,248,0.05); padding: 4px 12px; border-radius: 100px; display: inline-block; margin-bottom: 1.5rem;">v6.0.0 — Enterprise Engine</span>
         <h1 class="hero-title">
-          <span class="text-outlined-white">BEYOND</span><br>
-          <span style="color: var(--acid-green); text-shadow: 0 0 60px rgba(212,255,0,0.5);">SPEED</span>
+          <span class="text-outlined-white" style="display:block; font-size: 0.75em; font-weight: 800; letter-spacing: -0.02em;">Designed for</span>
+          <span class="text-gradient-intense" style="display:block; line-height: 0.88;">Speed</span>
         </h1>
-        <p class="hero-subtitle" style="max-width: 600px; margin: 1.5rem 0 3rem; font-size: 1.4rem; color: var(--text-primary);">
-          Multi-process safe, <strong>Rust-powered</strong> JSON database. 
-          Built for high-throughput Node.js applications that demand zero latency.
+        <p class="lead" style="margin: 2rem 0 2.5rem; max-width: 560px;">
+          Multi-process safe, <strong style="color: #fff; font-weight: 600;">Rust-powered</strong> JSON database.
+          Built for high-throughput Node.js applications that demand almost zero latency.
         </p>
 
-        <div class="hero-cta" style="justify-content: flex-start; flex-wrap: wrap; gap: 1.5rem;">
-          <a href="docs.html#quick-start" class="btn btn-primary" style="padding: 1.2rem 2.5rem; font-size: 1.1rem;">Get Started</a>
-          <a href="benchmarks.html" class="btn btn-secondary" style="padding: 1.2rem 2.5rem; font-size: 1.1rem;">View Benchmarks</a>
+        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 2rem;">
+          <a href="docs.html#quick-start" class="btn btn-primary">Get Started</a>
+          <a href="benchmarks.html" class="btn btn-secondary">View Benchmarks</a>
         </div>
 
         <!-- Install Command Box -->
-        <div class="hero-install-cmd" onclick="navigator.clipboard.writeText('npm install jsondb-high'); this.querySelector('.cmd-text').innerText = 'Copied!'; setTimeout(() => this.querySelector('.cmd-text').innerText = 'npm install jsondb-high', 2000);">
-          <span style="color: var(--text-muted);">$</span>
-          <span class="cmd-text">npm install jsondb-high</span>
-          <svg class="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        <div class="hero-install-cmd" onclick="navigator.clipboard.writeText('npm install jsondb-high'); this.querySelector('.cmd-text').innerText = 'Copied!'; setTimeout(() => this.querySelector('.cmd-text').innerText = '$ npm install jsondb-high', 2000);">
+          <span class="cmd-text" style="color: var(--text-muted); font-size: 0.85rem;">$ npm install jsondb-high</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.4; flex-shrink:0;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
         </div>
       </div>
 
@@ -132,7 +132,7 @@
         <div class="feature-icon" style="font-size: 2.5rem; margin-bottom: 1.5rem;">🏗️</div>
         <h3>ACID Durability</h3>
         <p class="feature-description">
-          <strong>Write-Ahead Logging (WAL)</strong> ensures data integrity. Group commits enable ~260k write ops/s without sacrificing safety.
+          <strong>Write-Ahead Logging (WAL)</strong> ensures data integrity. Group commits enable ~525k write ops/s without sacrificing safety.
         </p>
       </div>
       
@@ -148,9 +148,9 @@
       <div class="feature-card animate-fade-up glare-container">
         <div class="glare"></div>
         <div class="feature-icon" style="font-size: 2.5rem; margin-bottom: 1.5rem;">📦</div>
-        <h3>Zero Dependencies</h3>
+        <h3>No External Services</h3>
         <p class="feature-description">
-          No external database servers. No heavy binaries. Just a single self-contained native module that works out of the box.
+          No database servers. No daemons. No runtime dependencies. Ships with prebuilt native binaries for every platform — or falls back to WASM automatically.
         </p>
       </div>
     </div>

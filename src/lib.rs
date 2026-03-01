@@ -22,11 +22,18 @@ mod memory_manager;
 mod query_engine;
 mod write_lock;
 
+// v6 modules
+mod buffer_pool;
+mod mvcc;
+mod replication;
+mod streaming;
+mod pitr;
+
 use btree::BTreeIndex;
 use lru::LruCache;
 use memory_manager::{parse_memory_limit, MemoryConfig, MemoryManager};
 use parking_lot::Mutex;
-use query_engine::{execute_aggregate, execute_query, parse_sort_specs, CompiledFilter};
+use query_engine::{execute_aggregate, execute_query, explain_query, parse_sort_specs, CompiledFilter};
 use schema::{validate, Schema};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
@@ -182,7 +189,7 @@ pub struct SystemInfo {
     pub recommended_batch_size: u32,
 }
 
-/// Database options for v4.5
+/// Database options for v4.5+
 #[derive(Debug, Clone)]
 pub struct DBOptions {
     pub lock_mode: LockMode,
@@ -190,6 +197,12 @@ pub struct DBOptions {
     pub wal_batch_size: usize,
     pub wal_flush_ms: u64,
     pub lock_timeout_ms: u64,
+    /// v6: Configurable stripe count for write concurrency (default: 64)
+    pub stripe_count: usize,
+    /// v6: Buffer pool size in MB (0 = disabled, uses full in-memory mode)
+    pub buffer_pool_size_mb: usize,
+    /// v6: Buffer pool page size in KB (default: 16)
+    pub buffer_page_size_kb: usize,
 }
 
 impl Default for DBOptions {
@@ -199,7 +212,10 @@ impl Default for DBOptions {
             durability: DurabilityMode::Batched,
             wal_batch_size: 1000,
             wal_flush_ms: 10,
-            lock_timeout_ms: 5000, // Default 5s timeout
+            lock_timeout_ms: 5000,
+            stripe_count: 64,
+            buffer_pool_size_mb: 0,
+            buffer_page_size_kb: 16,
         }
     }
 }
@@ -252,6 +268,9 @@ impl NativeDB {
             wal_batch_size: 1000,
             wal_flush_ms: 10,
             lock_timeout_ms: 0,
+            stripe_count: 64,
+            buffer_pool_size_mb: 0,
+            buffer_page_size_kb: 16,
         };
 
         Self::new_with_options_internal(path, options)
@@ -296,17 +315,14 @@ impl NativeDB {
             None
         };
 
-        // 3. Load existing data or start fresh
+        // 3. Load existing data or start fresh (v6: mmap for large files)
         let mut data = json!({});
 
         let p = PathBuf::from(&path);
         if p.exists() {
-            // Load main DB
-            let contents = fs::read_to_string(&p)
-                .map_err(|e| Error::from_reason(format!("Failed to read database: {}", e)))?;
-
-            data = serde_json::from_str(&contents)
-                .map_err(|e| Error::from_reason(format!("Failed to parse database: {}", e)))?;
+            // v6: Use mmap-backed loading for near-instant startup
+            data = buffer_pool::mmap_load_json(&p)
+                .map_err(|e| Error::from_reason(format!("Failed to load database: {}", e)))?;
         }
 
         // 4. Recover from WAL
@@ -322,7 +338,7 @@ impl NativeDB {
         }
 
         let memory_manager = MemoryManager::new(&path, MemoryConfig::default());
-        let write_locks = StripedLockManager::new();
+        let write_locks = StripedLockManager::with_stripes(options.stripe_count);
 
         Ok(NativeDB {
             path,
@@ -348,6 +364,9 @@ impl NativeDB {
         wal_batch_size: Option<u32>,
         wal_flush_ms: Option<u32>,
         lock_timeout_ms: Option<u32>,
+        stripe_count: Option<u32>,
+        buffer_pool_size_mb: Option<u32>,
+        buffer_page_size_kb: Option<u32>,
     ) -> Result<Self> {
         let options = DBOptions {
             lock_mode: LockMode::from_str(&lock_mode),
@@ -355,6 +374,9 @@ impl NativeDB {
             wal_batch_size: wal_batch_size.unwrap_or(1000) as usize,
             wal_flush_ms: wal_flush_ms.unwrap_or(10) as u64,
             lock_timeout_ms: lock_timeout_ms.unwrap_or(5000) as u64,
+            stripe_count: stripe_count.unwrap_or(64) as usize,
+            buffer_pool_size_mb: buffer_pool_size_mb.unwrap_or(0) as usize,
+            buffer_page_size_kb: buffer_page_size_kb.unwrap_or(16) as usize,
         };
 
         Self::new_with_options_internal(path, options)
@@ -409,36 +431,22 @@ impl NativeDB {
         Ok(())
     }
 
-    /// Legacy load (maintained for compatibility)
+    /// Legacy load (maintained for compatibility, now uses mmap)
     #[napi]
     pub fn load(&self) -> Result<()> {
         let p = PathBuf::from(&self.path);
 
-        // Try to read directly.
-        // If it fails (Err), we check IF it was "NotFound".
-        match fs::read_to_string(&p) {
-            Ok(contents) => {
-                // File exists and we read it! Time to parse.
-                let new_data: Value = serde_json::from_str(&contents)
-                    .map_err(|e| Error::from_reason(format!("Failed to parse database: {}", e)))?;
-
-                // CRITICAL ZONE: Quick swap
-                let mut data = self.data.write();
-                *data = new_data;
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // File doesn't exist? No problem, just do nothing or init empty.
-                // This is safer than p.exists()!
-                return Ok(());
-            }
-            Err(e) => {
-                // Genuine error (permission denied, etc.)
-                return Err(Error::from_reason(format!(
-                    "Failed to read database: {}",
-                    e
-                )));
-            }
+        if !p.exists() {
+            return Ok(()); // No file yet — nothing to load
         }
+
+        // v6: Use mmap-backed loading
+        let new_data = buffer_pool::mmap_load_json(&p)
+            .map_err(|e| Error::from_reason(format!("Failed to load database: {}", e)))?;
+
+        // CRITICAL ZONE: Quick swap
+        let mut data = self.data.write();
+        *data = new_data;
 
         Ok(())
     }
@@ -1552,6 +1560,76 @@ impl NativeDB {
 
         // Serialize to JSON string — much faster than N-API recursive Value conversion
         serde_json::to_string(&result)
+            .map_err(|e| Error::from_reason(format!("Serialization error: {}", e)))
+    }
+
+    /// v6: Explain a query execution plan — returns JSON string with metadata
+    /// instead of actual results. Shows scan type, filter info, timing, etc.
+    #[napi]
+    pub fn explain_query_fast(
+        &self,
+        path: String,
+        filters_json: String,
+        sort_json: Option<String>,
+        limit: Option<u32>,
+        skip: Option<u32>,
+        select_fields: Option<Vec<String>>,
+    ) -> Result<String> {
+        let data = self.data.read();
+        let ptr = Self::normalize_path(&path);
+
+        let collection = if ptr == "/" || ptr.is_empty() {
+            Some(&*data)
+        } else {
+            data.pointer(&ptr)
+        };
+
+        let collection = match collection {
+            Some(c) => c,
+            None => return Ok(serde_json::to_string(&serde_json::json!({
+                "scanType": "EMPTY",
+                "collectionSize": 0,
+                "error": "Collection not found"
+            })).unwrap_or_default()),
+        };
+
+        let compiled_filters: Vec<CompiledFilter> =
+            if filters_json.is_empty() || filters_json == "[]" {
+                vec![]
+            } else {
+                let raw_filters: Vec<QueryFilter> = serde_json::from_str(&filters_json)
+                    .map_err(|e| Error::from_reason(format!("Invalid filters JSON: {}", e)))?;
+                raw_filters
+                    .iter()
+                    .filter_map(|qf| CompiledFilter::compile(&qf.field, &qf.op, &qf.value))
+                    .collect()
+            };
+
+        let sort_specs = match &sort_json {
+            Some(s) if !s.is_empty() && s != "{}" => parse_sort_specs(s),
+            _ => vec![],
+        };
+
+        let select_paths: Option<Vec<Vec<String>>> = select_fields.map(|fields| {
+            fields
+                .iter()
+                .map(|f| f.split('.').map(|s| s.to_string()).collect())
+                .collect()
+        });
+
+        let use_parallel = THREAD_CONFIG.use_parallel;
+
+        let plan = explain_query(
+            collection,
+            &compiled_filters,
+            &sort_specs,
+            skip.map(|s| s as usize),
+            limit.map(|l| l as usize),
+            &select_paths,
+            use_parallel,
+        );
+
+        serde_json::to_string(&plan)
             .map_err(|e| Error::from_reason(format!("Serialization error: {}", e)))
     }
 

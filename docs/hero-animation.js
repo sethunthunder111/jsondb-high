@@ -28,11 +28,11 @@ const initHeroAnimation = () => {
   const fov = 300; // Field of View (Depth)
 
   const colors = [
-    '#D4FF00', // Acid Green (Primary)
-    '#E5FF4D', // Light Acid
-    '#A6C700', // Darker Acid
-    '#FFFFFF', // White
-    '#F0FFB2'  // Pale Acid
+    '#ffffff',   // White
+    '#3b82f6',   // Deep Blue
+    '#8b5cf6',   // Violet
+    '#0ea5e9',   // Cyan
+    '#1e293b'    // Dark Slate
   ];
 
   class Star {
@@ -111,9 +111,8 @@ const initHeroAnimation = () => {
   }
 
   function animate() {
-    // Clear with trail effect (semi-transparent fill)
-    // Using darker fill for more contrast
-    ctx.fillStyle = 'rgba(5, 5, 5, 0.4)'; 
+    // Fill completely instead of using trailing alpha clears which is very slow
+    ctx.fillStyle = '#000000'; 
     ctx.fillRect(0, 0, width, height);
 
     // Smooth speed transition logic
@@ -152,15 +151,18 @@ const initHeroAnimation = () => {
     centerY = height / 2;
   });
 
-  // Interaction: Boost on scroll
+  // Interaction: Boost on scroll (Optimized to throttle)
   let scrollTimeout;
   window.addEventListener('scroll', () => {
-    targetSpeed = BOOST_SPEED;
+    // Only boost if we aren't already boosting too hard
+    if (targetSpeed < BOOST_SPEED) {
+      targetSpeed = BOOST_SPEED * 0.7; // Moderate boost for professional feel
+    }
     clearTimeout(scrollTimeout);
     scrollTimeout = setTimeout(() => {
         // Just let it decay naturally
     }, 100);
-  });
+  }, { passive: true }); // passive listener for performance
   
   // Interaction: Mouse Parallax
   window.addEventListener('mousemove', (e) => {

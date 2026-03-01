@@ -5,9 +5,9 @@ target/
 node_modules/
 dist/
 out/
-build/
+# NAPI-RS built binaries — root copies ignored, prebuilds/ is tracked
 *.node
-index.node
+!prebuilds/*.node
 
 # Bun
 .bun/
@@ -48,6 +48,11 @@ coverage/
 *.json.wal
 *.json.idx
 *.json.lock
+*.json.process_lock
+
+# Integration test artifacts
+integ_*.json*
+v6_*.json*
 
 # Test database files
 test_db.json*
@@ -65,13 +70,20 @@ benchmarks/*.idx
 benchmarks/*.lock
 bench_db.json*
 
-# Documentation files (generated/planning)
+# Documentation files (generated/planning) — not for public repo
 LIMITATIONS.md
 Plan*.md
 CHANGELOG*.md
+DISADVANTAGES_VS_LOWDB.md
+IDEAL_USE_CASES.md
+SCALING_LIMITS.md
+V6_ARCHITECTURE.md
 
-# NAPI-RS Artifacts
+# NAPI-RS CI artifacts (downloaded during release workflow)
 artifacts/
+
+# Lite build output (generated)
+lite/
 
 *.tgz
 

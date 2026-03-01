@@ -2,26 +2,43 @@
 
 A blazing fast, feature-rich JSON database for Node.js with a Rust-powered native query engine via N-API.
 
+> **v6.0** — MVCC concurrency, mmap O(1) startup, WAL replication, PITR, `.explain()` introspection, pluggable storage adapters, WASM fallback, and DashMap auto-scaling.
+
 ## ✨ Features
 
-- ⚡ **Blazing Fast**: Native Rust query engine via N-API (~2.5M ops/s reads, ~510k ops/s writes)
-- 🔎 **Native Query Engine** *(v5.5)*: Full query pipeline in Rust — filter → sort → skip → limit → select in one call
-- 🧠 **Smart Memory Management** *(v5.5)*: LRU-based cold storage eviction with transparent restore on access
-- 🔐 **Striped Write Locks** *(v5.5)*: 64-stripe collection-level concurrency — writes to different collections proceed in parallel
-- 🔒 **Multi-Process Safe**: OS-level advisory file locking prevents data corruption across multiple processes
-- 🧵 **Multi-Core Processing**: Adaptive parallelism using Rayon — automatically scales with your CPU
-- 🛡️ **Atomic Operations**: Group Commit Write-Ahead Logging (WAL) ensures ACID durability with near-zero overhead
+### Core Engine
+- ⚡ **Blazing Fast**: Native Rust query engine via N-API (~2.5M ops/s reads, ~545k ops/s writes)
+- 🔎 **Native Query Engine**: Full query pipeline in Rust — filter → sort → skip → limit → select in one call
+- 🧠 **Smart Memory Management**: LRU-based cold storage eviction with transparent restore on access
 - 🔍 **O(1) Indexing**: In-memory Map indices for instant, constant-time lookups
-- 📝 **Schema Validation**: JSON Schema-like validation for data integrity (v5.1+)
+- 📝 **Schema Validation**: JSON Schema-like validation for data integrity
 - 🔒 **Encryption**: AES-256-GCM encryption for data at rest
-- 📦 **Zero Dependencies**: Self-contained native binary; no external database servers required
+- 📦 **No External Services**: No database servers, no daemons. Ships prebuilt binaries for Linux/macOS/Windows — WASM fallback if unavailable
+
+### v6.0 — Enterprise Features
+- 🧬 **MVCC Concurrency** *(v6)*: Multi-Version Concurrency Control — readers never block writers, write-write conflicts return `ConflictError` instead of deadlocking
+- 📂 **mmap O(1) Startup** *(v6)*: Memory-mapped file loading via `memmap2` — near-instant startup regardless of database size
+- 🔄 **DashMap Auto-Scaling** *(v6)*: Lock-free concurrent hash map replaces fixed stripe locks — auto-scales with CPU cores
+- 🔬 **`.explain()` API** *(v6)*: Query introspection showing scan type, filters applied, execution time, sort/limit details
+- 📡 **WAL Replication** *(v6)*: Stream WAL entries to replicas with CRC32 integrity verification, async/sync modes
+- ⏪ **Point-in-Time Recovery** *(v6)*: Archive WAL files and restore to any timestamp with full data reconstruction
+- 🌐 **Pluggable Storage Adapters** *(v6)*: Decouple from Node.js `fs` — supports Memory, LocalStorage, IndexedDB, HTTP adapters
+- 🔀 **Zero-Copy Streams** *(v6)*: Chunked result streaming prevents V8 GC spikes with large result sets
+- 📦 **WASM Fallback** *(v6)*: 100% installation success — falls back to WASM when native binary unavailable
+- 🪶 **Lite Mode** *(v6)*: Stripped-down WASM-only build (<2MB) for Lambda/edge/browser
+
+### Infrastructure
+- 🧵 **Multi-Core Processing**: Adaptive parallelism using Rayon — automatically scales with your CPU
+- 🛡️ **Atomic Operations**: Group Commit Write-Ahead Logging (WAL) ensures ACID durability
+- 🔐 **Striped Write Locks**: Collection-level concurrency — writes to different collections proceed in parallel
+- 🔒 **Multi-Process Safe**: OS-level advisory file locking prevents data corruption
 - 🔄 **Middleware**: Support for before and after hooks on all operations
 - ⏱️ **TTL Support**: Auto-expire keys after a specified time (like Redis)
 - 📡 **Pub/Sub**: EventEmitter-style subscriptions to data changes
 - 📊 **Aggregations**: Built-in sum, avg, min, max, groupBy, distinct
 - 🔗 **Parallel Joins**: High-performance left outer join (lookup) operations
 
-## 📦 Installation
+## Installation
 
 ```bash
 bun add jsondb-high
@@ -29,13 +46,13 @@ bun add jsondb-high
 npm install jsondb-high
 ```
 
-> **Note**: This package builds its native core from source during installation. You must have [Rust and Cargo](https://rustup.rs/) installed on your system.
+> **v6 Tip**: The package ships with prebuilt binaries for Linux (x64/arm64), macOS (x64/arm64/universal), and Windows (x64/arm64). If no prebuild is available, it builds from source automatically. If Rust is not installed, it falls back to WASM.
 
 ## 🛠️ Requirements
 
 - **Node.js**: >= 16.0.0
-- **Rust Toolchain**: [Installed and in PATH](https://rustup.rs/) (Required for initial build)
-- **C++ Build Tools**: Required by Cargo on some platforms (e.g., Visual Studio Build Tools on Windows)
+- **Rust Toolchain**: [Optional — auto-installed or WASM fallback](https://rustup.rs/)
+- **Platforms**: Linux, macOS, Windows (x64 & arm64)
 
 ## 🚀 Quick Start
 
@@ -53,29 +70,45 @@ const user = await db.get('user.1');
 console.log(user); // { name: 'Alice', role: 'admin' }
 ```
 
-## 🏗️ Hybrid Architecture (v4.5+)
+## 🏗️ v6 Architecture
 
-jsondb-high offers multiple storage and safety modes. Choose based on your performance and durability needs.
+### Tri-Tier Loading
+```
+Tier 1: Prebuild .node binary (fastest, per-platform)
+   ↓ not found?
+Tier 2: Build from source via cargo (requires Rust)
+   ↓ not found?
+Tier 3: WASM fallback (universal, slightly slower)
+```
 
-### 🔒 Safety & Locking
-Prevent corruption from multiple processes using the same file.
+### DBOptions (v6)
 
 ```typescript
 const db = new JSONDatabase('db.json', {
-    lockMode: 'exclusive' // 'exclusive' | 'shared' | 'none'
+    // Core
+    wal: true,
+    durability: 'batched',        // 'none' | 'lazy' | 'batched' | 'sync'
+    walFlushMs: 10,               // Group commit interval
+    walBatchSize: 1000,           // Max batch before flush
+    lockMode: 'exclusive',        // 'exclusive' | 'shared' | 'none'
+
+    // v6: Concurrency
+    stripeCount: 256,             // DashMap auto-scaling (default: CPU cores × 4)
+
+    // v6: Memory / mmap
+    bufferPoolSizeMB: 64,         // Buffer pool size for mmap pages
+    bufferPageSizeKB: 16,         // Page size for buffer pool
+
+    // Existing
+    encryptionKey: 'your-32-char-key!!',
+    indices: [{ name: 'email', path: 'users', field: 'email' }],
+    memoryLimit: '512mb',
+    coldStorageDir: './cold',
+    schemas: { /* ... */ },
 });
 ```
 
 ### 💾 Durability Modes
-Configure the Write-Ahead Log (WAL) to balance speed and safety.
-
-```typescript
-const db = new JSONDatabase('db.json', {
-    durability: 'batched',   // 'none' | 'lazy' | 'batched' | 'sync'
-    walFlushMs: 10,          // Sync every 10ms (Group Commit)
-    lockMode: 'exclusive'
-});
-```
 
 | Mode | Throughput | Latency | Durability Window |
 |------|------------|---------|-------------------|
@@ -84,162 +117,142 @@ const db = new JSONDatabase('db.json', {
 | `batched`| ~525k ops/s | 0.002ms | 10ms (Recommended) |
 | `sync` | ~2k ops/s | 0.5ms | Immediate |
 
-## 📝 Schema Validation (v5.1+)
+## 🧬 MVCC Concurrency (v6)
 
-Define schemas to enforce data structure and validation rules at specific paths.
+Multi-Version Concurrency Control ensures readers never block writers. Concurrent writes to the same key are detected and return a `ConflictError` instead of deadlocking.
 
 ```typescript
 const db = new JSONDatabase('db.json', {
-    schemas: {
-        'users': {
-            type: 'object',
-            properties: {
-                id: { type: 'number' },
-                email: { 
-                    type: 'string', 
-                    pattern: '^[\w.-]+@[\w.-]+\.\w+$' 
-                },
-                age: { 
-                    type: 'number', 
-                    minimum: 0, 
-                    maximum: 150 
-                },
-                role: { 
-                    type: 'string', 
-                    enum: ['admin', 'user', 'guest'] 
-                },
-                tags: {
-                    type: 'array',
-                    items: { type: 'string' },
-                    uniqueItems: true
-                }
-            },
-            required: ['id', 'email']
-        }
-    }
+    stripeCount: 256,  // DashMap auto-scales with CPU cores
 });
 
-// This will throw validation error (missing required field)
-await db.set('users.1', { id: 1 }); // ❌ Error: Missing required property: email
+// These proceed in parallel — different collections, no locking
+await Promise.all([
+    db.set('users.1', { name: 'Alice' }),
+    db.set('orders.1', { total: 99 }),
+    db.set('logs.1', { event: 'login' }),
+]);
 
-// This will throw validation error (invalid email pattern)
-await db.set('users.1', { 
-    id: 1, 
-    email: 'invalid-email' 
-}); // ❌ Error: String does not match pattern
-
-// Valid data
-await db.set('users.1', { 
-    id: 1, 
-    email: 'alice@example.com',
-    age: 25,
-    role: 'admin',
-    tags: ['premium', 'beta']
-}); // ✅ Success
+// Transaction with automatic rollback on conflict
+await db.transaction(async () => {
+    const balance = await db.get<number>('account.balance') ?? 0;
+    await db.set('account.balance', balance - 100);
+});
 ```
 
-### Schema Types & Constraints
+## 📂 mmap O(1) Startup (v6)
 
-| Type | Constraints |
-|------|-------------|
-| `string` | `minLength`, `maxLength`, `pattern` (regex) |
-| `number` | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum` |
-| `array` | `minItems`, `maxItems`, `uniqueItems`, `items` (item schema) |
-| `object` | `properties`, `required` |
-| All types | `enum` (allowed values) |
+Database files are memory-mapped using `memmap2`, providing near-instant startup regardless of file size:
+
+```typescript
+const db = new JSONDatabase('large.json', {
+    bufferPoolSizeMB: 128,   // Configurable buffer pool
+    bufferPageSizeKB: 32,    // Page size tuning
+});
+// 100MB file? Opens in <1ms via mmap
+```
+
+## 🔬 `.explain()` API (v6)
+
+Inspect query execution plans — no more guessing what the Rust engine is doing:
+
+```typescript
+const plan = await db.query('users')
+    .where('age').gt(18)
+    .where('role').eq('admin')
+    .sort({ age: -1 })
+    .limit(10)
+    .explain();
+
+console.log(plan);
+// {
+//   scanType: 'FILTER_SCAN',
+//   collectionSize: 50000,
+//   filtersApplied: [
+//     { field: 'age', op: 'Gt' },
+//     { field: 'role', op: 'Eq' }
+//   ],
+//   sortApplied: [{ field: 'age', direction: 'desc' }],
+//   limit: 10,
+//   skip: 0,
+//   matchedCount: 1234,
+//   resultCount: 10,
+//   executionTimeMs: 0.42,
+//   parallelExecution: false
+// }
+```
+
+## ⏪ Point-in-Time Recovery (v6)
+
+Create snapshots and restore to any previous state:
+
+```typescript
+// Create a named snapshot
+const snapPath = await db.createSnapshot('before-migration');
+
+// ... make changes ...
+await db.set('config.version', '7.0.0');
+
+// Oops — roll back!
+await db.restoreSnapshot(snapPath);
+// Data is back to the exact state at snapshot time
+```
+
+## 🌐 Pluggable Storage Adapters (v6)
+
+Decouple the database from Node.js `fs` for browser/edge/serverless environments:
+
+```typescript
+import { MemoryAdapter, FileSystemAdapter } from 'jsondb-high/adapters';
+
+// In-memory (testing, ephemeral)
+const memAdapter = new MemoryAdapter();
+await memAdapter.write('{"test": 42}');
+const data = await memAdapter.read(); // '{"test": 42}'
+
+// File system (Node.js default)
+const fsAdapter = new FileSystemAdapter('./db.json');
+
+// Also available: LocalStorageAdapter, IndexedDBAdapter, HttpAdapter
+```
 
 ## 📖 API Reference
 
 ### Basic Operations
 
-#### `set(path, value)`
-
-Writes data. Creates nested paths automatically.
-
 ```typescript
 await db.set('config.theme', 'dark');
 await db.set('users.1.settings.notifications', true);
-```
-
-#### `get(path, defaultValue?)`
-
-Retrieves data. Returns `defaultValue` if path doesn't exist.
-
-```typescript
 const val = await db.get('config.theme', 'light');
-```
-
-#### `has(path)`
-
-Checks existence.
-
-```typescript
-if (await db.has('users.1')) {
-    // User exists
-}
-```
-
-#### `delete(path)`
-
-Removes a key or object property.
-
-```typescript
-await db.delete('users.1.settings'); // Delete nested property
-await db.delete('users.1');          // Delete entire object
+if (await db.has('users.1')) { /* ... */ }
+await db.delete('users.1.settings');
 ```
 
 ### Arrays
 
-#### `push(path, ...items)`
-
-Adds items to an array. Dedupes automatically.
-
 ```typescript
 await db.push('users.1.tags', 'premium', 'beta');
-```
-
-#### `pull(path, ...items)`
-
-Removes items from an array (deep equality).
-
-```typescript
 await db.pull('users.1.tags', 'beta');
 ```
 
 ### Math Operations (Atomic)
 
-#### `add(path, amount)`
-
-Atomic increment. Returns new value.
-
 ```typescript
 const newCount = await db.add('users.1.loginCount', 1);
-```
-
-#### `subtract(path, amount)`
-
-Atomic decrement. Returns new value.
-
-```typescript
 const newCredits = await db.subtract('users.1.credits', 50);
 ```
 
 ### 🔍 Indices (O(1) Lookups)
-
-Define indices in the constructor for O(1) read performance.
 
 ```typescript
 const db = new JSONDatabase('db.json', {
     indices: [{ name: 'email', path: 'users', field: 'email' }]
 });
 
-// Instant Lookup
 const user = await db.findByIndex('email', 'alice@corp.com');
 ```
 
 ### 🔎 Advanced Query Cursor
-
-Chainable query builder with aggregation support.
 
 ```typescript
 const results = await db.query('users')
@@ -247,7 +260,7 @@ const results = await db.query('users')
     .where('role').eq('admin')
     .limit(10)
     .skip(0)
-    .sort({ age: -1 }) // Descending
+    .sort({ age: -1 })
     .select(['id', 'name', 'email'])
     .exec();
 ```
@@ -288,31 +301,19 @@ const grouped = db.query('users').groupBy('department');
 ### Find (Simple)
 
 ```typescript
-// With function predicate
 const user = await db.find('users', u => u.age > 18);
-
-// With object matcher
 const admin = await db.find('users', { role: 'admin' });
-
-// Find all matching
 const adults = await db.findAll('users', u => u.age >= 18);
 ```
 
 ### 📄 Paginate
 
-Helper for API endpoints.
-
 ```typescript
 const page = await db.paginate('users', 1, 20);
-// Returns: { 
-//   data: [...], 
-//   meta: { total, pages, page, limit, hasNext, hasPrev } 
-// }
+// { data: [...], meta: { total, pages, page, limit, hasNext, hasPrev } }
 ```
 
 ### 📦 Batch Operations
-
-Execute multiple writes in a single IO tick.
 
 ```typescript
 await db.batch([
@@ -324,165 +325,62 @@ await db.batch([
 
 ### 🧵 Multi-Core Parallel Processing
 
-The database automatically detects available CPU cores and uses parallel processing for large datasets (≥100 items). Falls back to efficient single-threaded operation for small workloads to avoid overhead.
-
-#### System Info
-
-Check system capabilities for parallel processing.
-
 ```typescript
 const info = db.getSystemInfo();
-console.log(info);
-// {
-//   availableCores: 8,
-//   parallelEnabled: true,
-//   recommendedBatchSize: 1000
-// }
-```
+// { availableCores: 8, parallelEnabled: true, recommendedBatchSize: 1000 }
 
-#### Parallel Batch Set
+// Parallel batch write
+await db.batchSetParallel(largeArray);
 
-Execute thousands of set operations efficiently using all available cores.
-
-```typescript
-const operations = [];
-for (let i = 0; i < 10000; i++) {
-    operations.push({
-        path: `users.${i}`,
-        value: { id: i, name: `User ${i}`, active: true }
-    });
-}
-
-const result = await db.batchSetParallel(operations);
-console.log(`Completed ${result.count} operations`);
-// Automatically parallelized when ≥100 items
-```
-
-#### Parallel Query
-
-High-performance filtering using native Rust parallel iteration.
-
-```typescript
-// Filter with multiple conditions - uses parallel processing for large collections
-const activeAdults = await db.parallelQuery('users', [
+// Parallel query
+const active = await db.parallelQuery('users', [
     { field: 'age', op: 'gte', value: 18 },
     { field: 'status', op: 'eq', value: 'active' }
 ]);
 
-// Available operators: eq, ne, gt, gte, lt, lte, contains, startswith, endswith, in, notin, regex, containsAll, containsAny
+// Parallel aggregation
+const total = await db.parallelAggregate('orders', 'sum', 'amount');
+
+// Parallel join
+const usersWithOrders = await db.parallelLookup(
+    'users', 'orders', 'id', 'userId', 'orders'
+);
 ```
 
-#### Parallel Aggregation
-
-Compute aggregations efficiently across large datasets.
-
-```typescript
-const count = await db.parallelAggregate('orders', 'count');
-const totalRevenue = await db.parallelAggregate('orders', 'sum', 'amount');
-const avgOrderValue = await db.parallelAggregate('orders', 'avg', 'amount');
-const minOrder = await db.parallelAggregate('orders', 'min', 'amount');
-const maxOrder = await db.parallelAggregate('orders', 'max', 'amount');
-```
-
-#### Parallel Joins (Lookups)
-
-Perform high-performance left outer joins across collections.
-
-```typescript
-// Join users with their orders
-const usersWithOrders = await db.parallelQuery('users', [])
-    .then(users => {
-        return db.parallelLookup(
-            'users',      // left collection
-            'orders',     // right collection  
-            'id',         // left field (users.id)
-            'userId',     // right field (orders.userId)
-            'orders'      // output field name
-        );
-    });
-// Result: Users with embedded 'orders' array containing matching orders
-```
-
-#### How It Works
-
-- **Adaptive**: Automatically uses 1-N cores based on workload size and system resources
-- **Efficient**: Small workloads (<100 items) use single-threaded to avoid parallel overhead
-- **Resource-Aware**: Leaves 1 core free for system/main thread
-- **Scalable**: Performance scales linearly with available cores for large datasets
-
-## 🧠 Smart Memory Management (v5.5+)
-
-Automatically offload least-recently-used data to disk when memory limits are approached. Data is transparently restored on access.
-
-### Configuration
+### 🧠 Smart Memory Management
 
 ```typescript
 const db = new JSONDatabase('db.json', {
-    memoryLimit: '512mb',        // Max memory (e.g. '256mb', '1gb')
-    coldStorageDir: './cold',    // Where offloaded data is stored
-    evictionThresholdPct: 80,    // Start evicting at 80% usage
-    evictionTargetPct: 60        // Evict until 60% usage
+    memoryLimit: '512mb',
+    coldStorageDir: './cold',
+    evictionThresholdPct: 80,
+    evictionTargetPct: 60
+});
+
+await db.offload('largeCollection');
+const stats = await db.memoryStats();
+```
+
+### 📝 Schema Validation
+
+```typescript
+const db = new JSONDatabase('db.json', {
+    schemas: {
+        'users': {
+            type: 'object',
+            properties: {
+                id: { type: 'number' },
+                email: { type: 'string', pattern: '^[\\w.-]+@[\\w.-]+\\.\\w+$' },
+                age: { type: 'number', minimum: 0, maximum: 150 },
+                role: { type: 'string', enum: ['admin', 'user', 'guest'] }
+            },
+            required: ['id', 'email']
+        }
+    }
 });
 ```
 
-### Manual Offload & Restore
-
-```typescript
-// Offload a collection to disk to free memory
-const id = await db.offload('largeCollection');
-
-// Data is automatically restored on access:
-const data = await db.get('largeCollection.key1'); // Transparent restore
-
-// Or manually restore:
-await db.restore('largeCollection');
-```
-
-### Memory Stats
-
-```typescript
-const stats = await db.memoryStats();
-console.log(stats);
-// {
-//   totalEstimatedBytes: 52428800,
-//   maxMemoryBytes: 536870912,
-//   coldKeysCount: 3,
-//   hotKeysCount: 12,
-//   utilizationPct: 10
-// }
-
-// Manually trigger eviction check
-const evicted = await db.checkMemoryPressure();
-console.log('Evicted keys:', evicted);
-```
-
-### How It Works
-
-- **LRU Eviction**: Least-recently-accessed collections are evicted first
-- **Per-Key Size Estimation**: Tracks estimated memory per top-level key
-- **Transparent Restore**: `get()` automatically restores cold data on access
-- **Cold File Storage**: Evicted data is written as JSON to disk, deleted on restore
-
-## 🔐 Striped Write Locks (v5.5+)
-
-Writes to different top-level collections proceed concurrently using a 64-stripe lock manager.
-
-```typescript
-// These writes can run in parallel because they target different collections
-await Promise.all([
-    db.set('users.1', { name: 'Alice' }),
-    db.set('orders.1', { total: 99 }),
-    db.set('logs.1', { event: 'login' }),
-]);
-```
-
-- **64 Lock Stripes**: Collection keys are hashed to stripes for concurrent access
-- **Deadlock-Free Batch Locking**: Batch operations sort stripe indices before acquisition
-- **Zero Contention on Reads**: Readers never block writers
-
 ### 🔒 Transactions
-
-Atomic read-modify-write with automatic rollback on error.
 
 ```typescript
 await db.transaction(async (data) => {
@@ -496,28 +394,19 @@ await db.transaction(async (data) => {
 
 ### 📸 Snapshots
 
-Create and restore backups.
-
 ```typescript
 const backupPath = await db.createSnapshot('daily');
-console.log('Backup saved to:', backupPath);
-
-// Restore later
 await db.restoreSnapshot(backupPath);
 ```
 
 ### 🔧 Middleware
 
-Intercept operations before/after they happen.
-
 ```typescript
-// Before hook - modify data before write
 db.before('set', 'users.*', (ctx) => {
     ctx.value.updatedAt = Date.now();
     return ctx;
 });
 
-// After hook - react after write
 db.after('set', 'users.*', (ctx) => {
     console.log('User updated:', ctx.path);
     return ctx;
@@ -526,102 +415,46 @@ db.after('set', 'users.*', (ctx) => {
 
 ### ⏱️ TTL (Time to Live)
 
-Auto-expire keys like Redis.
-
 ```typescript
-// Set with TTL (expires in 60 seconds)
 await db.setWithTTL('session.abc123', { userId: 1 }, 60);
-
-// Set TTL on existing key
 db.setTTL('temp.data', 300);
-
-// Get remaining TTL (-1 = no TTL, -2 = key doesn't exist)
 const ttl = await db.getTTL('session.abc123');
-
-// Remove TTL (make persistent)
 db.clearTTL('session.abc123');
-
-// Check if key has TTL
-if (db.hasTTL('session.abc123')) { ... }
-
-// Listen for expirations
-db.on('ttl:expired', ({ path }) => {
-    console.log('Key expired:', path);
-});
 ```
 
 ### 📡 Pub/Sub (Subscriptions)
 
-Subscribe to key changes with pattern matching.
-
 ```typescript
-// Subscribe to all user changes
 const unsubscribe = db.subscribe('users.*', (newValue, oldValue) => {
     console.log('User changed:', newValue);
 });
 
-// Subscribe to specific path
-db.subscribe('config.theme', (value) => {
-    applyTheme(value);
-});
-
-// Wildcards supported
-db.subscribe('**', (value, old) => {
-    // Called for ALL changes
-});
-
-// Unsubscribe when done
-unsubscribe();
-
-// Or use event emitter style
 db.on('change', ({ path, value, oldValue }) => {
     console.log(`${path} changed`);
 });
+
+unsubscribe();
 ```
 
 ### 🔐 Encryption
-
-AES-256-GCM encryption for data at rest.
 
 ```typescript
 const db = new JSONDatabase('secure.json', {
     encryptionKey: 'your-32-character-secret-key!!'
 });
-
-// All data is encrypted before writing to disk
-await db.set('secrets', { apiKey: 'xyz123' });
 ```
 
 ### 🛠️ Utility Methods
 
 ```typescript
-// Get all keys under a path
 const keys = await db.keys('users');
-
-// Get all values under a path
 const values = await db.values('users');
-
-// Count items
 const count = await db.count('users');
-
-// Clear all data
 await db.clear();
-
-// Get database statistics
 const stats = await db.stats();
-// { size: 1234, keys: 10, indices: 2, ttlKeys: 5, subscriptions: 3 }
-
-// Force save to disk (Durable write)
 await db.save();
-
-// Explicit durability sync (v4.5+)
 await db.sync();
-
-// Check WAL status (v4.5+)
-const wal = db.walStatus();
-// { enabled: true, committedLsn: 12345 }
-
-// Clean shutdown
+const wal = db.walStatus(); // { enabled: true, committed_lsn: 12345 }
 await db.close();
 ```
 
@@ -636,22 +469,6 @@ db.on('snapshot:created', ({ path, name }) => { ... });
 db.on('snapshot:restored', ({ path }) => { ... });
 db.on('ttl:expired', ({ path }) => { ... });
 db.on('error', (error) => { ... });
-```
-
-## 🔧 Development
-
-```bash
-# Build native module
-bun run build
-
-# Run tests
-bun test
-
-# Run benchmarks
-bun run bench
-
-# Build debug version
-bun run build:debug
 ```
 
 ## 📊 Performance Benchmarks
@@ -672,7 +489,7 @@ bun run build:debug
 | findByIndex       | 696,810 ops/s     | 639,626 ops/s     | 0.0014ms      |
 | batch (10 ops)    | 264,029 ops/s     | 178,946 ops/s     | 0.0038ms      |
 
-### v5.5 Native Query Engine
+### v5.5+ Native Query Engine
 
 | Operation                          | 1K Dataset   | 10K Dataset  | 50K Dataset  |
 | ---------------------------------- | ------------ | ------------ | ------------ |
@@ -681,27 +498,46 @@ bun run build:debug
 | Native: filter+select(3 fields)    | 10,594 ops/s | 3,656 ops/s  | 1,426 ops/s  |
 | JS Fallback: filter(fn)            | 519 ops/s    | 39 ops/s     | 5 ops/s      |
 
-### v5.5 Concurrent Write Scaling
+## 🔧 Development
 
-| Test                                          | Ops/s     | Avg Latency |
-| --------------------------------------------- | --------- | ----------- |
-| Sequential writes (same collection)           | 427,333   | 0.0023ms    |
-| Concurrent 10 writes (different collections)  | 44,174    | 0.0226ms    |
-| Batch mixed (100 ops, 10 collections)         | 10,968    | 0.0912ms    |
+```bash
+# Build native module
+bun run build
 
-### Key Insights
+# Run tests (207 tests, 6 test files)
+bun test
 
-- **Read operations** (`get`, `has`) are now near-instant (~2.5M ops/s) thanks to zero-copy lookups. 🔥
-- **Write throughput doubled** in v5.5 (~545k ops/s vs ~260k in v4.x) with striped write locks.
-- **Native query engine** runs filter+select at **10,594 ops/s** — up to **20x faster** than JS fallback.
-- **Group Commit WAL** maintains ~525k write ops/s with full ACID durability.
-- **Smart memory management** transparently offloads cold data with sub-ms restore latency.
-- **Index lookups** provide O(1) performance regardless of dataset size (~700k ops/s).
+# Build all targets (prebuilds + WASM + lite)
+bun run build:all
+
+# Run benchmarks
+bun run bench
+
+# Clean build artifacts
+bun run clean
+```
+
+## 📑 Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for a full version history, or visit the [Changelog page](https://sethunthunder111.github.io/jsondb-high/changelog.html) on the docs site.
+
+## 📚 Documentation
+
+- **Docs site**: [sethunthunder111.github.io/jsondb-high](https://sethunthunder111.github.io/jsondb-high)
+- **API reference**: [docs/docs.html](https://sethunthunder111.github.io/jsondb-high/docs.html)
+- **Benchmarks**: [benchmarks/RESULTS.md](./benchmarks/RESULTS.md)
 
 ## 📄 License
 
-MIT
+MIT — see [LICENSE](./LICENSE).
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please read our contributing guidelines before submitting PRs.
+Contributions are welcome! To get started:
+
+1. Fork the repo and create your branch from `main`
+2. Run `bun install` and `bun test` to verify everything passes
+3. Make your changes with tests covering new behaviour
+4. Open a pull request — CI will build and test all platforms automatically
+
+For bug reports and feature requests, please [open an issue](https://github.com/sethunthunder111/jsondb-high/issues).

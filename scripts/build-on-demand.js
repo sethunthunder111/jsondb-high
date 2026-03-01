@@ -61,7 +61,10 @@ function getNativeName() {
 
 function buildOnDemand() {
   const binaryName = getNativeName();
-  const binaryPath = path.join(__dirname, '..', binaryName);
+  const prebuildsDir = path.join(__dirname, '..', 'prebuilds');
+  // Ensure prebuilds/ exists
+  if (!fs.existsSync(prebuildsDir)) fs.mkdirSync(prebuildsDir, { recursive: true });
+  const binaryPath = path.join(prebuildsDir, binaryName);
 
   if (fs.existsSync(binaryPath)) {
     return binaryPath;

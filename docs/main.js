@@ -1,9 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
-  // Detect touch / mobile devices
-  const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.innerWidth <= 1024;
-
-  // Initialize Lenis for smooth scrolling — ONLY on non-touch / desktop
-  if (typeof Lenis !== 'undefined' && !isTouchDevice) {
+  // Initialize Lenis for smooth scrolling (Lenis natively handles touch tracking safely now)
+  if (typeof Lenis !== 'undefined') {
     window.lenis = new Lenis({
       duration: 1.2,
       easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
@@ -92,17 +89,18 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // Parallax Decorative Elements
+    // Parallax Decorative Elements optimized
     gsap.utils.toArray('.bg-text').forEach((el, i) => {
       gsap.to(el, {
         scrollTrigger: {
           trigger: el.parentElement,
           start: 'top bottom',
           end: 'bottom top',
-          scrub: 1.5
+          scrub: 1 // reduced from 1.5 for performance
         },
-        x: i % 2 === 0 ? 150 : -150,
-        ease: 'none'
+        x: i % 2 === 0 ? 100 : -100, // Reduced translation amount
+        ease: 'none',
+        force3D: true // Hardware acceleration
       });
     });
 
@@ -172,7 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Ultra-Responsive Magnetic Button Effect
   if (typeof gsap !== 'undefined') {
-    const magneticButtons = document.querySelectorAll('.btn');
+    const magneticButtons = document.querySelectorAll('.btn, .nav-cta, .hero-badge');
     magneticButtons.forEach(btn => {
       btn.addEventListener('mousemove', (e) => {
         const rect = btn.getBoundingClientRect();

@@ -1,0 +1,363 @@
+# CI: Build all native prebuilds + publish to npm
+#
+# Triggers:
+#   - Push to main (Linux x64 + arm64 always built)
+#   - Push of a 'v*' tag  → full matrix (Linux, macOS, Windows) + npm publish
+#   - Manual workflow_dispatch
+#
+# Required Secrets:
+#   NPM_TOKEN  — automation token from npmjs.com (Settings › Access Tokens › Automation)
+
+name: CI & Publish
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Linux prebuilds (always run — fast, native)
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+  build-linux:
+    name: Linux ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            label: x64-gnu
+            artifact: index.linux-x64-gnu.node
+            cross: false
+
+          - target: aarch64-unknown-linux-gnu
+            label: arm64-gnu
+            artifact: index.linux-arm64-gnu.node
+            cross: true
+
+          - target: x86_64-unknown-linux-musl
+            label: x64-musl
+            artifact: index.linux-x64-musl.node
+            cross: true
+
+          - target: aarch64-unknown-linux-musl
+            label: arm64-musl
+            artifact: index.linux-arm64-musl.node
+            cross: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-linux-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-linux-${{ matrix.target }}-
+
+      - name: Install cross (if needed)
+        if: matrix.cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build (native)
+        if: "!matrix.cross"
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Package .node
+        run: |
+          mkdir -p prebuilds
+          # Linux shared lib is .so
+          cp target/${{ matrix.target }}/release/libjsondb_high.so \
+             prebuilds/${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-${{ matrix.label }}
+          path: prebuilds/${{ matrix.artifact }}
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 2. macOS prebuilds (tag push only — Apple runners are expensive)
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            arch: arm64
+            runner: macos-14
+          - target: x86_64-apple-darwin
+            arch: x64
+            runner: macos-13
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-macos-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package .node
+        run: |
+          mkdir -p prebuilds
+          cp target/${{ matrix.target }}/release/libjsondb_high.dylib \
+             prebuilds/index.darwin-${{ matrix.arch }}.node
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-darwin-${{ matrix.arch }}
+          path: prebuilds/index.darwin-${{ matrix.arch }}.node
+
+  universal-macos:
+    name: macOS Universal
+    needs: build-macos
+    runs-on: macos-14
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: prebuild-darwin-arm64
+          path: prebuilds
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: prebuild-darwin-x64
+          path: prebuilds
+
+      - name: Create universal binary
+        run: |
+          lipo -create \
+            prebuilds/index.darwin-arm64.node \
+            prebuilds/index.darwin-x64.node \
+            -output prebuilds/index.darwin-universal.node
+
+      - name: Upload universal artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-darwin-universal
+          path: prebuilds/index.darwin-universal.node
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 3. Windows prebuilds (tag push only)
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-windows:
+    name: Windows ${{ matrix.arch }}
+    runs-on: windows-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            arch: x64
+            artifact: index.win32-x64-msvc.node
+          - target: aarch64-pc-windows-msvc
+            arch: arm64
+            artifact: index.win32-arm64-msvc.node
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-win-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package .node
+        shell: bash
+        run: |
+          mkdir -p prebuilds
+          cp target/${{ matrix.target }}/release/jsondb_high.dll \
+             prebuilds/${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-win32-${{ matrix.arch }}
+          path: prebuilds/${{ matrix.artifact }}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 4. Test suite (Linux x64 only, runs on every push / PR)
+  # ─────────────────────────────────────────────────────────────────────────────
+  test:
+    name: Tests
+    needs: build-linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download linux-x64-gnu prebuild
+        uses: actions/download-artifact@v4
+        with:
+          name: prebuild-x64-gnu
+          path: prebuilds
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run tests
+        run: bun test tests/
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 5. Publish to npm (tag push only, after ALL platform builds pass)
+  # ─────────────────────────────────────────────────────────────────────────────
+  publish:
+    name: Publish to npm
+    # Only run on tag push, after all platform builds succeed
+    needs: [build-linux, build-macos, universal-macos, build-windows, test]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write   # needed to create GitHub release
+      id-token: write   # needed for npm provenance
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      # Download ALL prebuilds into prebuilds/ directory
+      - name: Download linux-x64-gnu
+        uses: actions/download-artifact@v4
+        with:
+          name: prebuild-x64-gnu
+          path: prebuilds
+
+      - name: Download linux-arm64-gnu
+        uses: actions/download-artifact@v4
+        with:
+          name: prebuild-arm64-gnu
+          path: prebuilds
+
+      - name: Download linux-x64-musl
+        uses: actions/download-artifact@v4
+        with:
+          name: prebuild-x64-musl
+          path: prebuilds
+
+      - name: Download linux-arm64-musl
+        uses: actions/download-artifact@v4
+        with:
+          name: prebuild-arm64-musl
+          path: prebuilds
+
+      - name: Download macos-arm64
+        uses: actions/download-artifact@v4
+        with:
+          name: prebuild-darwin-arm64
+          path: prebuilds
+
+      - name: Download macos-x64
+        uses: actions/download-artifact@v4
+        with:
+          name: prebuild-darwin-x64
+          path: prebuilds
+
+      - name: Download macos-universal
+        uses: actions/download-artifact@v4
+        with:
+          name: prebuild-darwin-universal
+          path: prebuilds
+
+      - name: Download windows-x64
+        uses: actions/download-artifact@v4
+        with:
+          name: prebuild-win32-x64
+          path: prebuilds
+
+      - name: Download windows-arm64
+        uses: actions/download-artifact@v4
+        with:
+          name: prebuild-win32-arm64
+          path: prebuilds
+
+      - name: List prebuilds
+        run: ls -lh prebuilds/
+
+      - name: Set version from tag
+        run: |
+          TAG=${GITHUB_REF#refs/tags/v}
+          echo "Publishing version $TAG"
+          bun x npm version "$TAG" --no-git-tag-version
+
+      - name: Publish to npm
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          bun x npm publish --access public --provenance
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            prebuilds/*.node

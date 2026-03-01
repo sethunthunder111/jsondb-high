@@ -517,3 +517,102 @@ pub fn parse_sort_specs(sort_json: &str) -> Vec<SortSpec> {
         vec![]
     }
 }
+
+/// v6: Explain a query execution plan without returning actual data.
+/// Returns metadata about how the query would be executed.
+pub fn explain_query(
+    collection: &Value,
+    filters: &[CompiledFilter],
+    sort_specs: &[SortSpec],
+    skip: Option<usize>,
+    limit: Option<usize>,
+    select_fields: &Option<Vec<Vec<String>>>,
+    use_parallel: bool,
+) -> Value {
+    let start = std::time::Instant::now();
+
+    let items: Vec<&Value> = match collection {
+        Value::Object(map) => map.values().collect(),
+        Value::Array(arr) => arr.iter().collect(),
+        _ => return json!({
+            "collectionSize": 0,
+            "scanType": "EMPTY",
+            "error": "Collection is not an object or array"
+        }),
+    };
+
+    let collection_size = items.len();
+    let should_parallel = use_parallel && collection_size >= PARALLEL_THRESHOLD;
+
+    // Execute filters to get match count (we measure real execution time)
+    let filtered: Vec<&Value> = if filters.is_empty() {
+        items
+    } else if should_parallel {
+        items.par_iter()
+            .filter(|item| filters.iter().all(|f| f.matches(item)))
+            .copied()
+            .collect()
+    } else {
+        items.into_iter()
+            .filter(|item| filters.iter().all(|f| f.matches(item)))
+            .collect()
+    };
+
+    let matched_count = filtered.len();
+
+    // Determine how many results would actually be returned
+    let after_skip = if let Some(s) = skip {
+        if s < matched_count { matched_count - s } else { 0 }
+    } else {
+        matched_count
+    };
+
+    let result_count = if let Some(l) = limit {
+        after_skip.min(l)
+    } else {
+        after_skip
+    };
+
+    let elapsed = start.elapsed();
+
+    // Build filter descriptions
+    let filter_descriptions: Vec<Value> = filters.iter().map(|f| {
+        json!({
+            "field": f.segments.join("."),
+            "op": format!("{:?}", f.op),
+        })
+    }).collect();
+
+    // Build sort descriptions
+    let sort_descriptions: Vec<Value> = sort_specs.iter().map(|s| {
+        json!({
+            "field": s.segments.join("."),
+            "direction": if s.descending { "DESC" } else { "ASC" },
+        })
+    }).collect();
+
+    let scan_type = if filters.is_empty() {
+        "FULL_SCAN"
+    } else {
+        "FILTER_SCAN"
+    };
+
+    let projected_fields: Vec<String> = select_fields
+        .as_ref()
+        .map(|fields| fields.iter().map(|f| f.join(".")).collect())
+        .unwrap_or_default();
+
+    json!({
+        "scanType": scan_type,
+        "collectionSize": collection_size,
+        "filtersApplied": filter_descriptions,
+        "matchedCount": matched_count,
+        "sortApplied": sort_descriptions,
+        "skip": skip.unwrap_or(0),
+        "limit": limit,
+        "projectedFields": projected_fields,
+        "resultCount": result_count,
+        "parallelExecution": should_parallel,
+        "executionTimeMs": elapsed.as_secs_f64() * 1000.0,
+    })
+}

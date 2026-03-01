@@ -11,7 +11,7 @@
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 
   <!-- Scripts -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
@@ -30,6 +30,7 @@
         <a href="index.html" class="nav-link">Home</a>
         <a href="docs.html" class="nav-link active">Docs</a>
         <a href="benchmarks.html" class="nav-link">Benchmarks</a>
+        <a href="changelog.html" class="nav-link">Changelog</a>
         <a href="https://github.com/sethunthunder111/jsondb-high" class="nav-link" target="_blank" rel="noopener">GitHub</a>
         <a href="docs.html#quick-start" class="nav-cta">Get Started</a>
       </div>
@@ -43,10 +44,10 @@
 
   <!-- Hero Section -->
   <header class="hero">
-    <div class="docs-hero-bg"></div>
+    <div class="hero-glow"></div>
     <div class="hero-content">
       <div class="hero-left">
-        <div class="hero-badge">v5.5.0 Release</div>
+        <div class="hero-badge">v6.0.0 Release</div>
         <h1 class="hero-title">
           <span class="text-outlined-white">HIGH</span><br>
           PERFORMANCE
@@ -58,15 +59,15 @@
 
         <div class="hero-stats">
           <div>
-            <div class="hero-stat-value">2M<span>+</span></div>
+            <div class="hero-stat-value">2.5M<span>+</span></div>
             <div class="hero-stat-label">Reads/Sec</div>
           </div>
           <div>
-            <div class="hero-stat-value">260k<span>+</span></div>
+            <div class="hero-stat-value">545k<span>+</span></div>
             <div class="hero-stat-label">Writes/Sec</div>
           </div>
           <div>
-            <div class="hero-stat-value">0.003<span>ms</span></div>
+            <div class="hero-stat-value">0.002<span>ms</span></div>
             <div class="hero-stat-label">Latency</div>
           </div>
         </div>
@@ -135,6 +136,20 @@
             <li class="docs-nav-item"><a href="#parallel-query" class="docs-nav-link">Parallel Query</a></li>
           </ul>
         </div>
+
+        <div class="docs-nav-section">
+          <p class="docs-nav-title">v6 Features</p>
+          <ul class="docs-nav-list">
+            <li class="docs-nav-item"><a href="#mvcc" class="docs-nav-link">MVCC Concurrency</a></li>
+            <li class="docs-nav-item"><a href="#mmap" class="docs-nav-link">mmap O(1) Startup</a></li>
+            <li class="docs-nav-item"><a href="#explain" class="docs-nav-link">.explain() API</a></li>
+            <li class="docs-nav-item"><a href="#pitr" class="docs-nav-link">Point-in-Time Recovery</a></li>
+            <li class="docs-nav-item"><a href="#adapters" class="docs-nav-link">Storage Adapters</a></li>
+            <li class="docs-nav-item"><a href="#replication" class="docs-nav-link">WAL Replication</a></li>
+            <li class="docs-nav-item"><a href="#lite-mode" class="docs-nav-link">Lite Mode</a></li>
+            <li class="docs-nav-item"><a href="#wasm-fallback" class="docs-nav-link">WASM Fallback</a></li>
+          </ul>
+        </div>
         
         <div class="docs-nav-section">
           <p class="docs-nav-title">TypeScript Types</p>
@@ -155,7 +170,7 @@
         <p>Welcome to the future of Node.js data storage. <strong>jsondb-high</strong> bridges the gap between the simplicity of JSON files and the performance of enterprise-grade databases.</p>
         
         <div class="alert alert-info">
-          <strong>New in v4.5:</strong> Hybrid Architecture with configurable durability and locking modes for maximum reliability.
+          <strong>New in v6.0:</strong> MVCC concurrency, mmap O(1) startup, .explain() query introspection, PITR, pluggable storage adapters, WAL replication, zero-copy streams, WASM fallback, and lite mode.
         </div>
       </section>
 
@@ -189,14 +204,14 @@ bun add jsondb-high
 npm install jsondb-high</code></pre>
       </div>
       <div class="alert">
-        <strong>Note:</strong> This package builds its native core from source. Ensure Rust and Cargo are installed on your machine.
+        <strong>Note:</strong> v6 ships prebuilt binaries for most platforms. If no prebuild is available, it builds from source automatically. If Rust is not installed, it falls back to WASM.
       </div>
 
       <h2 id="requirements" class="section-header">Requirements</h2>
       <ul>
         <li>Node.js: >= 16.0.0</li>
-        <li>Rust Toolchain: Installed and in PATH (Required for initial build)</li>
-        <li>C++ Build Tools: Required by Cargo on some platforms</li>
+        <li>Rust Toolchain: Optional — auto-installed or WASM fallback</li>
+        <li>Platforms: Linux, macOS, Windows (x64 & arm64)</li>
       </ul>
 
       <h2 id="quick-start" class="section-header">Quick Start</h2>
@@ -233,9 +248,9 @@ npm install jsondb-high</code></pre>
             <tr><th>Mode</th><th>Throughput</th><th>Latency</th><th>Durability Window</th></tr>
           </thead>
           <tbody>
-            <tr><td><code>none</code></td><td>~260k ops/s</td><td>0.003ms</td><td>Manual save only</td></tr>
-            <tr><td><code>lazy</code></td><td>~200k ops/s</td><td>0.003ms</td><td>100ms</td></tr>
-            <tr><td style="color: var(--acid-green);"><code>batched</code></td><td><strong>~240k ops/s</strong></td><td>5ms</td><td>10ms (Recommended)</td></tr>
+            <tr><td><code>none</code></td><td>~545k ops/s</td><td>0.002ms</td><td>Manual save only</td></tr>
+            <tr><td><code>lazy</code></td><td>~400k ops/s</td><td>0.003ms</td><td>100ms</td></tr>
+            <tr><td style="color: var(--acid-green);"><code>batched</code></td><td><strong>~525k ops/s</strong></td><td>0.002ms</td><td>10ms (Recommended)</td></tr>
             <tr><td><code>sync</code></td><td>~2k ops/s</td><td>0.5ms</td><td>Immediate</td></tr>
           </tbody>
         </table>
@@ -283,13 +298,16 @@ npm install jsondb-high</code></pre>
   wal?: <span class="token-type">boolean</span>;                     <span class="token-comment">// Enable Write-Ahead Logging</span>
   encryptionKey?: <span class="token-type">string</span>;            <span class="token-comment">// AES-256-GCM encryption key (32 chars)</span>
   autoSaveInterval?: <span class="token-type">number</span>;         <span class="token-comment">// Auto-save interval in ms</span>
-  lockMode?: <span class="token-string">'exclusive'</span> | <span class="token-string">'shared'</span> | <span class="token-string">'none'</span>;  <span class="token-comment">// v4.5: Process locking mode</span>
-  lockTimeoutMs?: <span class="token-type">number</span>;            <span class="token-comment">// v4.5: Lock timeout in ms</span>
-  durability?: <span class="token-string">'none'</span> | <span class="token-string">'lazy'</span> | <span class="token-string">'batched'</span> | <span class="token-string">'sync'</span>;  <span class="token-comment">// v4.5: Durability mode</span>
-  walBatchSize?: <span class="token-type">number</span>;             <span class="token-comment">// v4.5: WAL batch size</span>
-  walFlushMs?: <span class="token-type">number</span>;               <span class="token-comment">// v4.5: WAL flush interval in ms</span>
-  schemas?: <span class="token-type">Record</span>&lt;<span class="token-type">string</span>, <span class="token-type">Schema</span>&gt;;  <span class="token-comment">// v5.1: Path-based schemas</span>
-  slowQueryThresholdMs?: <span class="token-type">number</span>;     <span class="token-comment">// v5.1: Slow query threshold in ms</span>
+  lockMode?: <span class="token-string">'exclusive'</span> | <span class="token-string">'shared'</span> | <span class="token-string">'none'</span>;  <span class="token-comment">// Process locking mode</span>
+  lockTimeoutMs?: <span class="token-type">number</span>;            <span class="token-comment">// Lock timeout in ms</span>
+  durability?: <span class="token-string">'none'</span> | <span class="token-string">'lazy'</span> | <span class="token-string">'batched'</span> | <span class="token-string">'sync'</span>;  <span class="token-comment">// Durability mode</span>
+  walBatchSize?: <span class="token-type">number</span>;             <span class="token-comment">// WAL batch size</span>
+  walFlushMs?: <span class="token-type">number</span>;               <span class="token-comment">// WAL flush interval in ms</span>
+  schemas?: <span class="token-type">Record</span>&lt;<span class="token-type">string</span>, <span class="token-type">Schema</span>&gt;;  <span class="token-comment">// Path-based schemas</span>
+  slowQueryThresholdMs?: <span class="token-type">number</span>;     <span class="token-comment">// Slow query threshold in ms</span>
+  stripeCount?: <span class="token-type">number</span>;              <span class="token-comment">// v6: DashMap concurrency stripes</span>
+  bufferPoolSizeMB?: <span class="token-type">number</span>;         <span class="token-comment">// v6: Buffer pool size for mmap</span>
+  bufferPageSizeKB?: <span class="token-type">number</span>;         <span class="token-comment">// v6: Page size for buffer pool</span>
 }</code></pre>
       </div>
 
@@ -546,6 +564,126 @@ db.<span class="token-function">on</span>(<span class="token-string">'error'</sp
   <span class="token-string">'userId'</span>,     <span class="token-comment">// right field (orders.userId)</span>
   <span class="token-string">'orders'</span>      <span class="token-comment">// output field name</span>
 );</code></pre>
+      </div>
+
+      <!-- ═══ v6 FEATURES ═══════════════════════════════════════════ -->
+
+      <h2 id="mvcc" class="section-header">🧬 MVCC Concurrency (v6)</h2>
+      <p>Multi-Version Concurrency Control ensures readers never block writers. Concurrent writes to the same key return a <code>ConflictError</code> instead of deadlocking.</p>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> db = <span class="token-keyword">new</span> <span class="token-function">JSONDatabase</span>(<span class="token-string">'db.json'</span>, {
+  stripeCount: <span class="token-number">256</span>,  <span class="token-comment">// DashMap auto-scales with CPU cores</span>
+});
+
+<span class="token-comment">// These proceed in parallel — different collections, no locking</span>
+<span class="token-keyword">await</span> Promise.<span class="token-function">all</span>([
+  db.<span class="token-function">set</span>(<span class="token-string">'users.1'</span>, { name: <span class="token-string">'Alice'</span> }),
+  db.<span class="token-function">set</span>(<span class="token-string">'orders.1'</span>, { total: <span class="token-number">99</span> }),
+  db.<span class="token-function">set</span>(<span class="token-string">'logs.1'</span>, { event: <span class="token-string">'login'</span> }),
+]);</code></pre>
+      </div>
+
+      <h2 id="mmap" class="section-header">📂 mmap O(1) Startup (v6)</h2>
+      <p>Database files are memory-mapped via <code>memmap2</code> — near-instant startup regardless of file size.</p>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> db = <span class="token-keyword">new</span> <span class="token-function">JSONDatabase</span>(<span class="token-string">'large.json'</span>, {
+  bufferPoolSizeMB: <span class="token-number">128</span>,   <span class="token-comment">// Configurable buffer pool</span>
+  bufferPageSizeKB: <span class="token-number">32</span>,    <span class="token-comment">// Page size tuning</span>
+});
+<span class="token-comment">// 100MB file? Opens in &lt;1ms via mmap</span></code></pre>
+      </div>
+
+      <h2 id="explain" class="section-header">🔬 .explain() API (v6)</h2>
+      <p>Inspect query execution plans — no more guessing what the Rust engine is doing:</p>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> plan = <span class="token-keyword">await</span> db.<span class="token-function">query</span>(<span class="token-string">'users'</span>)
+  .<span class="token-function">where</span>(<span class="token-string">'age'</span>).<span class="token-function">gt</span>(<span class="token-number">18</span>)
+  .<span class="token-function">sort</span>({ age: <span class="token-number">-1</span> })
+  .<span class="token-function">limit</span>(<span class="token-number">10</span>)
+  .<span class="token-function">explain</span>();
+
+<span class="token-comment">// {</span>
+<span class="token-comment">//   scanType: 'FILTER_SCAN',</span>
+<span class="token-comment">//   collectionSize: 50000,</span>
+<span class="token-comment">//   filtersApplied: [{ field: 'age', op: 'Gt' }],</span>
+<span class="token-comment">//   sortApplied: [{ field: 'age', direction: 'desc' }],</span>
+<span class="token-comment">//   limit: 10,</span>
+<span class="token-comment">//   matchedCount: 1234,</span>
+<span class="token-comment">//   executionTimeMs: 0.42</span>
+<span class="token-comment">// }</span></code></pre>
+      </div>
+
+      <h2 id="pitr" class="section-header">⏪ Point-in-Time Recovery (v6)</h2>
+      <p>Create snapshots and restore to any previous state:</p>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">const</span> snap = <span class="token-keyword">await</span> db.<span class="token-function">createSnapshot</span>(<span class="token-string">'before-migration'</span>);
+
+<span class="token-comment">// ... make changes ...</span>
+<span class="token-keyword">await</span> db.<span class="token-function">set</span>(<span class="token-string">'config.version'</span>, <span class="token-string">'7.0.0'</span>);
+
+<span class="token-comment">// Roll back!</span>
+<span class="token-keyword">await</span> db.<span class="token-function">restoreSnapshot</span>(snap);</code></pre>
+      </div>
+
+      <h2 id="adapters" class="section-header">🌐 Pluggable Storage Adapters (v6)</h2>
+      <p>Decouple the database from Node.js <code>fs</code> for browser/edge/serverless environments:</p>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-keyword">import</span> { MemoryAdapter, FileSystemAdapter } <span class="token-keyword">from</span> <span class="token-string">'jsondb-high/adapters'</span>;
+
+<span class="token-comment">// In-memory (testing, ephemeral)</span>
+<span class="token-keyword">const</span> mem = <span class="token-keyword">new</span> <span class="token-function">MemoryAdapter</span>();
+<span class="token-keyword">await</span> mem.<span class="token-function">write</span>(<span class="token-string">'{"test": 42}'</span>);
+<span class="token-keyword">const</span> data = <span class="token-keyword">await</span> mem.<span class="token-function">read</span>();
+
+<span class="token-comment">// Also: LocalStorageAdapter, IndexedDBAdapter, HttpAdapter</span></code></pre>
+      </div>
+
+      <h2 id="replication" class="section-header">📡 WAL Replication (v6)</h2>
+      <p>Stream WAL entries to replicas with CRC32 integrity verification. Supports async and sync acknowledgment modes.</p>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-comment">// WAL entries are automatically persisted</span>
+<span class="token-keyword">const</span> db = <span class="token-keyword">new</span> <span class="token-function">JSONDatabase</span>(<span class="token-string">'db.json'</span>, {
+  durability: <span class="token-string">'batched'</span>,
+  walFlushMs: <span class="token-number">5</span>
+});
+
+<span class="token-keyword">await</span> db.<span class="token-function">set</span>(<span class="token-string">'key'</span>, <span class="token-string">'value'</span>);
+<span class="token-keyword">await</span> db.<span class="token-function">sync</span>();
+
+<span class="token-keyword">const</span> status = db.<span class="token-function">walStatus</span>();
+<span class="token-comment">// { enabled: true, committed_lsn: 42 }</span></code></pre>
+      </div>
+
+      <h2 id="lite-mode" class="section-header">🪶 Lite Mode (v6)</h2>
+      <p>Stripped-down WASM-only build (&lt;2MB) for AWS Lambda, edge functions, and browsers:</p>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-comment"># Build the lite distribution</span>
+bun run build:lite
+
+<span class="token-comment"># Output: ./lite/ with WASM binary + shim + adapters only</span>
+<span class="token-comment"># No native .node files, no rayon parallelism</span>
+<span class="token-comment"># Perfect for size-constrained environments</span></code></pre>
+      </div>
+
+      <h2 id="wasm-fallback" class="section-header">📦 WASM Fallback (v6)</h2>
+      <p>100% installation success — the package automatically falls back to WASM when no native binary is available and Rust is not installed:</p>
+      <div class="code-block">
+        <button class="code-copy">Copy</button>
+        <pre><code><span class="token-comment">// Loading priority:</span>
+<span class="token-comment">// 1. Prebuild .node binary (prebuilds/index.linux-x64-gnu.node)</span>
+<span class="token-comment">// 2. Build from source via cargo (if Rust installed)</span>
+<span class="token-comment">// 3. WASM fallback (always works, slightly slower)</span>
+
+<span class="token-comment">// You'll see this warning in WASM mode:</span>
+<span class="token-comment">// [jsondb-high] Running in WASM fallback mode.</span>
+<span class="token-comment">// Performance will be reduced (no parallelism).</span></code></pre>
       </div>
 
       <h2 id="types-interfaces" class="section-header">TypeScript Interfaces</h2>

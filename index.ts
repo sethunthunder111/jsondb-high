@@ -85,6 +85,15 @@ export interface DBOptions {
     evictionThresholdPct?: number;
 
     evictionTargetPct?: number;
+
+    /** v6: Number of write lock stripes for concurrent writes (default: 64). Increase for high-core-count servers. */
+    stripeCount?: number;
+
+    /** v6: Buffer pool size in MB (0 = disabled, default: 0). Set to e.g. 256 for large databases. */
+    bufferPoolSizeMB?: number;
+
+    /** v6: Buffer pool page size in KB (default: 16). Smaller = finer granularity, larger = fewer pages. */
+    bufferPageSizeKB?: number;
 }
 
 export interface TTLEntry {
@@ -843,6 +852,69 @@ private applyFilters(limit?: number): T[] {
         items = this.applyPostProcessing(items);
         return items[items.length - 1];
     }
+
+    /** v6: Returns the execution plan for this query without fetching results.
+     * Shows scan type, collection size, matched count, parallelism, timing, etc.
+     */
+    async explain(): Promise<{
+        scanType: string;
+        collectionSize: number;
+        filtersApplied: Array<{ field: string; op: string }>;
+        matchedCount: number;
+        sortApplied: Array<{ field: string; direction: string }>;
+        skip: number;
+        limit: number | null;
+        projectedFields: string[];
+        resultCount: number;
+        parallelExecution: boolean;
+        executionTimeMs: number;
+    }> {
+        // Try native explain first
+        if (this.db && this.queryFilters.length > 0) {
+            try {
+                const sortJson = this._sortOptions ? JSON.stringify(this._sortOptions) : null;
+                const jsonStr = (this.db as any).native.explainQueryFast(
+                    this.path,
+                    JSON.stringify(this.queryFilters),
+                    sortJson,
+                    this._limit ?? null,
+                    this._skip ?? null,
+                    this._selectFields ?? null,
+                );
+
+                if (typeof jsonStr === 'string') {
+                    return JSON.parse(jsonStr);
+                }
+            } catch {
+                // Fall through to JS-based explain
+            }
+        }
+
+        // Fallback: JS-based explain
+        this.ensureData();
+        const collectionSize = Array.isArray(this.items)
+            ? this.items.length
+            : (this.items ? Object.keys(this.items).length : 0);
+
+        return {
+            scanType: this.queryFilters.length > 0 ? 'FILTER_SCAN' : 'FULL_SCAN',
+            collectionSize,
+            filtersApplied: this.queryFilters.map(f => ({ field: f.field, op: f.op })),
+            matchedCount: -1, // Unknown without executing
+            sortApplied: this._sortOptions
+                ? Object.entries(this._sortOptions).map(([field, dir]) => ({
+                    field,
+                    direction: dir < 0 ? 'DESC' : 'ASC',
+                }))
+                : [],
+            skip: this._skip ?? 0,
+            limit: this._limit ?? null,
+            projectedFields: this._selectFields ?? [],
+            resultCount: -1,
+            parallelExecution: false,
+            executionTimeMs: 0,
+        };
+    }
 }
 
 export class JSONDatabase extends EventEmitter {
@@ -865,6 +937,9 @@ export class JSONDatabase extends EventEmitter {
     private walBatchSize: number;
     private walFlushMs: number;
     private slowQueryThresholdMs: number;
+    private stripeCount: number;
+    private bufferPoolSizeMB: number;
+    private bufferPageSizeKB: number;
 
 
     private filePath: string;
@@ -882,6 +957,9 @@ export class JSONDatabase extends EventEmitter {
         this.walBatchSize = options.walBatchSize ?? 1000;
         this.walFlushMs = options.walFlushMs ?? 10;
         this.slowQueryThresholdMs = options.slowQueryThresholdMs ?? 100;
+        this.stripeCount = options.stripeCount ?? 64;
+        this.bufferPoolSizeMB = options.bufferPoolSizeMB ?? 0;
+        this.bufferPageSizeKB = options.bufferPageSizeKB ?? 16;
         
         if (typeof (NativeDb as any).newWithOptions === 'function') {
             this.native = (NativeDb as any).newWithOptions(
@@ -889,7 +967,11 @@ export class JSONDatabase extends EventEmitter {
                 this.lockMode,
                 this.durability,
                 this.walBatchSize,
-                this.walFlushMs
+                this.walFlushMs,
+                undefined, // lockTimeoutMs (use default)
+                this.stripeCount,
+                this.bufferPoolSizeMB,
+                this.bufferPageSizeKB,
             );
         } else {
             this.native = new NativeDb(filePath, this.wal);
@@ -958,7 +1040,9 @@ export class JSONDatabase extends EventEmitter {
                     this.lockMode,
                     this.durability,
                     this.walBatchSize,
-                    this.walFlushMs
+                    this.walFlushMs,
+                    undefined, // lockTimeoutMs
+                    this.stripeCount,
                 );
             } else {
                 this.native = new NativeDb(this.filePath, this.wal);
