@@ -28,11 +28,11 @@ const initHeroAnimation = () => {
   const fov = 300; // Field of View (Depth)
 
   const colors = [
-    '#ffffff',   // White
-    '#3b82f6',   // Deep Blue
-    '#8b5cf6',   // Violet
-    '#0ea5e9',   // Cyan
-    '#1e293b'    // Dark Slate
+    'rgba(255, 255, 255, 1)',
+    'rgba(255, 255, 255, 0.8)',
+    'rgba(200, 210, 230, 0.9)',
+    'rgba(150, 165, 200, 0.7)',
+    'rgba(255, 255, 255, 0.5)',
   ];
 
   class Star {
