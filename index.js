@@ -285,8 +285,8 @@ switch (platform) {
     throw new Error(`Unsupported OS: ${platform}, architecture: ${arch}`)
 }
 
-if (!nativeBinding) {
-  // --- Tier 2: Build from source ---
+if (!nativeBinding && process.env.JSONDB_BUILD === '1') {
+  // --- Tier 2: Build from source (opt-in: JSONDB_BUILD=1; avoids a surprise blocking cargo build on require) ---
   try {
     const { buildOnDemand } = require('./scripts/build-on-demand.js')
     const builtPath = buildOnDemand()
@@ -317,7 +317,8 @@ if (!nativeBinding) {
       `Failed to load jsondb-high:\n` +
       `  Native: ${reason}\n` +
       `  WASM: ${wasmErr && wasmErr.message ? wasmErr.message : wasmErr}\n` +
-      `Install Rust (https://rustup.rs/) or ensure the WASM package is built.`
+      `Platform: ${platform}-${arch}. Prebuilt binaries ship only for linux x64/arm64 (glibc). ` +
+      `Install Rust and run \`node scripts/build-on-demand.js\` (or set JSONDB_BUILD=1), or run \`npm run build:wasm\` for the WASM fallback.`
     )
   }
 }

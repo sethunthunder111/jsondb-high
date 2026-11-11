@@ -89,3 +89,7 @@ lite/
 
 .agent
 npm/
+
+# Stray test index files
+test_*.idx
+test_*.json.*.idx

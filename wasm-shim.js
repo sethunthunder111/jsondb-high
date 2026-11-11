@@ -23,7 +23,7 @@ function loadWasmModule() {
   if (!fs.existsSync(wasmJsPath)) {
     throw new Error(
       'WASM fallback not available. Neither native binary nor WASM package found. ' +
-      'Please install Rust (https://rustup.rs/) and run: bun run build'
+      'Please install Rust (https://rustup.rs/) and run: npm run build:wasm'
     );
   }
 
