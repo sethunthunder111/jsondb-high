@@ -15,6 +15,20 @@
     "clean": "bun scripts/clean.ts",
     "postinstall": "node scripts/build-on-demand.js"
   },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "index.ts",
+    "adapters.ts",
+    "wasm-shim.js",
+    "prebuilds/",
+    "wasm/pkg/",
+    "scripts/build-on-demand.js",
+    "src/",
+    "Cargo.toml",
+    "Cargo.lock",
+    "build.rs"
+  ],
   "keywords": [
     "json",
     "database",
